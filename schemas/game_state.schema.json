@@ -1,0 +1,122 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "game_state.schema.json",
+  "title": "GameState",
+  "description": "Mutable game state snapshot: players, characters, gear, and version counter.",
+  "type": "object",
+  "required": ["gameInstanceId", "gameConfigId", "stateVersion", "players"],
+  "additionalProperties": false,
+  "properties": {
+    "gameInstanceId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "gameConfigId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "References the gameConfigId this state was created with."
+    },
+    "stateVersion": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Monotonically increasing version, incremented on each accepted transaction."
+    },
+    "players": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/Player"
+      },
+      "description": "Map of playerId to player data."
+    },
+    "actors": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/Actor"
+      },
+      "description": "Map of actorId to actor data. Optional for backward compatibility."
+    }
+  },
+  "definitions": {
+    "Player": {
+      "type": "object",
+      "required": ["characters", "gear"],
+      "additionalProperties": false,
+      "properties": {
+        "characters": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/Character"
+          },
+          "description": "Map of characterId to character data."
+        },
+        "gear": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/GearInstance"
+          },
+          "description": "Map of gearId to gear instance data (inventory + equipped)."
+        }
+      }
+    },
+    "Character": {
+      "type": "object",
+      "required": ["classId", "level", "equipped"],
+      "additionalProperties": false,
+      "properties": {
+        "classId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "level": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "equipped": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Map of slotId to gearId. Empty slots are absent."
+        }
+      }
+    },
+    "GearInstance": {
+      "type": "object",
+      "required": ["gearDefId", "level"],
+      "additionalProperties": false,
+      "properties": {
+        "gearDefId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "level": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "equippedBy": {
+          "type": ["string", "null"],
+          "description": "characterId if equipped, null or absent if in inventory."
+        }
+      }
+    },
+    "Actor": {
+      "type": "object",
+      "required": ["apiKey", "playerIds"],
+      "additionalProperties": false,
+      "properties": {
+        "apiKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "playerIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

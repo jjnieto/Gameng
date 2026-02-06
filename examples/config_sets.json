@@ -1,0 +1,60 @@
+{
+  "gameConfigId": "sets_v1",
+  "maxLevel": 10,
+  "stats": ["strength", "hp"],
+  "slots": ["right_hand", "off_hand", "head", "chest"],
+  "classes": {
+    "warrior": {
+      "baseStats": { "strength": 5, "hp": 20 }
+    }
+  },
+  "gearDefs": {
+    "sword_basic": {
+      "baseStats": { "strength": 3 },
+      "equipPatterns": [["right_hand"]],
+      "setId": "warrior_set"
+    },
+    "greatsword": {
+      "baseStats": { "strength": 5, "hp": 5 },
+      "equipPatterns": [["right_hand", "off_hand"]],
+      "setId": "warrior_set",
+      "setPieceCount": 2
+    },
+    "versatile_sword": {
+      "baseStats": { "strength": 4 },
+      "equipPatterns": [["right_hand"], ["off_hand"]],
+      "setId": "warrior_set"
+    },
+    "elite_sword": {
+      "baseStats": { "strength": 8 },
+      "equipPatterns": [["right_hand"]],
+      "restrictions": {
+        "allowedClasses": ["warrior"],
+        "requiredCharacterLevel": 3
+      }
+    },
+    "warrior_helm": {
+      "baseStats": { "hp": 3 },
+      "equipPatterns": [["head"]],
+      "setId": "warrior_set"
+    },
+    "warrior_chest": {
+      "baseStats": { "hp": 5 },
+      "equipPatterns": [["chest"]],
+      "setId": "warrior_set"
+    }
+  },
+  "sets": {
+    "warrior_set": {
+      "bonuses": [
+        { "pieces": 2, "bonusStats": { "strength": 2 } },
+        { "pieces": 4, "bonusStats": { "hp": 10 } }
+      ]
+    }
+  },
+  "algorithms": {
+    "growth": { "algorithmId": "flat", "params": {} },
+    "levelCostCharacter": { "algorithmId": "flat", "params": {} },
+    "levelCostGear": { "algorithmId": "flat", "params": {} }
+  }
+}

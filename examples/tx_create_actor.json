@@ -1,0 +1,7 @@
+{
+  "txId": "tx_actor_001",
+  "type": "CreateActor",
+  "gameInstanceId": "instance_001",
+  "actorId": "actor_1",
+  "apiKey": "my-secret-key"
+}

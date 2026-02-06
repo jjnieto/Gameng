@@ -1,0 +1,38 @@
+{
+  "name": "gameng",
+  "version": "0.0.1",
+  "description": "Server-side data-driven RPG engine",
+  "type": "module",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.js",
+    "build": "tsc",
+    "test": "vitest run --exclude tests/e2e/**",
+    "test:e2e": "npm run build && vitest run tests/e2e --reporter verbose",
+    "lint": "eslint src tests",
+    "lint:fix": "eslint src tests --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit",
+    "validate": "npm run validate:schemas && npm run validate:openapi",
+    "validate:schemas": "tsx scripts/validate-schemas.ts",
+    "validate:openapi": "redocly lint openapi/openapi.yaml"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "fastify": "^5.2.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.18.0",
+    "@redocly/cli": "^1.27.0",
+    "@types/node": "^22.10.0",
+    "ajv": "^8.17.1",
+    "eslint": "^9.18.0",
+    "prettier": "^3.4.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.20.0",
+    "vitest": "^2.1.0"
+  }
+}

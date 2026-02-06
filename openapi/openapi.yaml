@@ -1,0 +1,909 @@
+openapi: 3.1.0
+info:
+  title: Gameng API
+  version: 0.0.1
+  description: Server-side data-driven RPG engine API
+
+servers:
+  - url: http://localhost:3000
+
+tags:
+  - name: health
+    description: Health check
+  - name: config
+    description: Game configuration (read-only)
+  - name: state
+    description: Game state (read-only)
+  - name: transaction
+    description: State mutation via transactions
+
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Health check
+      description: Returns server health status, timestamp, and uptime.
+      tags:
+        - health
+      responses:
+        "200":
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - status
+                  - timestamp
+                  - uptime
+                properties:
+                  status:
+                    type: string
+                    enum:
+                      - ok
+                  timestamp:
+                    type: string
+                    format: date-time
+                  uptime:
+                    type: number
+                    description: Server uptime in seconds
+
+  /{gameInstanceId}/config:
+    get:
+      operationId: getConfig
+      summary: Get game configuration
+      description: Returns the complete immutable game configuration for the given instance.
+      tags:
+        - config
+      parameters:
+        - $ref: "#/components/parameters/gameInstanceId"
+      responses:
+        "200":
+          description: Game configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameConfig"
+              example:
+                gameConfigId: minimal_v1
+                maxLevel: 10
+                stats:
+                  - strength
+                  - hp
+                slots:
+                  - right_hand
+                classes:
+                  warrior:
+                    baseStats:
+                      strength: 5
+                      hp: 20
+                gearDefs: {}
+                sets: {}
+                algorithms:
+                  growth:
+                    algorithmId: flat
+                    params: {}
+                  levelCostCharacter:
+                    algorithmId: flat
+                    params: {}
+                  levelCostGear:
+                    algorithmId: flat
+                    params: {}
+        "404":
+          description: Game instance not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                errorCode: INSTANCE_NOT_FOUND
+                errorMessage: "Game instance 'unknown' not found."
+
+  /{gameInstanceId}/stateVersion:
+    get:
+      operationId: getStateVersion
+      summary: Get current state version
+      description: Returns only the gameInstanceId and current stateVersion. Lightweight polling endpoint.
+      tags:
+        - state
+      parameters:
+        - $ref: "#/components/parameters/gameInstanceId"
+      responses:
+        "200":
+          description: Current state version
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StateVersionResponse"
+              example:
+                gameInstanceId: instance_001
+                stateVersion: 42
+        "404":
+          description: Game instance not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                errorCode: INSTANCE_NOT_FOUND
+                errorMessage: "Game instance 'unknown' not found."
+
+  /{gameInstanceId}/tx:
+    post:
+      operationId: submitTransaction
+      summary: Submit a transaction
+      description: >
+        Submit an atomic command to mutate game state. Returns 200 with the
+        result regardless of whether the transaction was accepted or rejected.
+        Domain errors are reported via `accepted: false` and `errorCode` in the
+        response body. Returns 400 only for malformed or unparseable request bodies.
+        CreateActor requires the ADMIN_API_KEY via Bearer token; all other
+        transaction types require a valid actor Bearer token.
+      tags:
+        - transaction
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/gameInstanceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Transaction"
+            example:
+              txId: tx_001
+              type: CreatePlayer
+              gameInstanceId: instance_001
+              playerId: player_1
+      responses:
+        "200":
+          description: Transaction processed (check `accepted` field for outcome)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransactionResult"
+              examples:
+                accepted:
+                  summary: Transaction accepted
+                  value:
+                    txId: tx_001
+                    accepted: true
+                    stateVersion: 1
+                rejected:
+                  summary: Transaction rejected
+                  value:
+                    txId: tx_002
+                    accepted: false
+                    stateVersion: 0
+                    errorCode: PLAYER_NOT_FOUND
+                    errorMessage: "Player 'player_99' not found."
+                unsupported_type:
+                  summary: Unsupported transaction type
+                  value:
+                    txId: tx_003
+                    accepted: false
+                    stateVersion: 0
+                    errorCode: UNSUPPORTED_TX_TYPE
+                    errorMessage: "Transaction type 'DeletePlayer' is not yet supported."
+        "400":
+          description: Malformed request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid Bearer token. For CreateActor, the ADMIN_API_KEY is required. For all other types, a valid actor token is required.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                missing_token:
+                  summary: No Authorization header
+                  value:
+                    errorCode: UNAUTHORIZED
+                    errorMessage: "Missing or invalid Bearer token."
+                invalid_admin_key:
+                  summary: CreateActor with non-admin token
+                  value:
+                    errorCode: UNAUTHORIZED
+                    errorMessage: "Missing or invalid admin API key."
+        "404":
+          description: Game instance not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                errorCode: INSTANCE_NOT_FOUND
+                errorMessage: "Game instance 'unknown' not found."
+
+  /{gameInstanceId}/state/player/{playerId}:
+    get:
+      operationId: getPlayerState
+      summary: Get player state
+      description: Returns the full player sub-object from the game state, including characters and gear. Requires authentication and ownership of the player.
+      tags:
+        - state
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/gameInstanceId"
+        - $ref: "#/components/parameters/playerId"
+      responses:
+        "200":
+          description: Player state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Player"
+              example:
+                characters:
+                  char_1:
+                    classId: warrior
+                    level: 3
+                    equipped:
+                      right_hand: gear_1
+                gear:
+                  gear_1:
+                    gearDefId: sword_basic
+                    level: 2
+                    equippedBy: char_1
+        "404":
+          description: Game instance or player not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                instance_not_found:
+                  summary: Game instance not found
+                  value:
+                    errorCode: INSTANCE_NOT_FOUND
+                    errorMessage: "Game instance 'unknown' not found."
+                player_not_found:
+                  summary: Player not found
+                  value:
+                    errorCode: PLAYER_NOT_FOUND
+                    errorMessage: "Player 'nobody' not found."
+        "401":
+          description: Missing or invalid Bearer token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                errorCode: UNAUTHORIZED
+                errorMessage: "Missing or invalid Bearer token."
+        "403":
+          description: Authenticated actor does not own the target player
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                errorCode: OWNERSHIP_VIOLATION
+                errorMessage: "Actor does not own player 'player_1'."
+
+  /{gameInstanceId}/character/{characterId}/stats:
+    get:
+      operationId: getCharacterStats
+      summary: Get computed character stats
+      description: Returns the final calculated stats for a character, combining base class stats, gear, set bonuses, and growth scaling. Requires authentication and ownership of the character's player.
+      tags:
+        - state
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/gameInstanceId"
+        - $ref: "#/components/parameters/characterId"
+      responses:
+        "200":
+          description: Computed character stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CharacterStats"
+              example:
+                characterId: char_1
+                classId: warrior
+                level: 3
+                finalStats:
+                  strength: 12.5
+                  hp: 45
+        "404":
+          description: Game instance or character not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                instance_not_found:
+                  summary: Game instance not found
+                  value:
+                    errorCode: INSTANCE_NOT_FOUND
+                    errorMessage: "Game instance 'unknown' not found."
+                character_not_found:
+                  summary: Character not found
+                  value:
+                    errorCode: CHARACTER_NOT_FOUND
+                    errorMessage: "Character 'char_99' not found."
+        "401":
+          description: Missing or invalid Bearer token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                errorCode: UNAUTHORIZED
+                errorMessage: "Missing or invalid Bearer token."
+        "403":
+          description: Authenticated actor does not own the character's player
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                errorCode: OWNERSHIP_VIOLATION
+                errorMessage: "Actor does not own player 'player_1'."
+
+components:
+  parameters:
+    gameInstanceId:
+      name: gameInstanceId
+      in: path
+      required: true
+      description: Unique identifier for the game instance
+      schema:
+        type: string
+        minLength: 1
+
+    playerId:
+      name: playerId
+      in: path
+      required: true
+      description: Unique identifier for the player
+      schema:
+        type: string
+        minLength: 1
+
+    characterId:
+      name: characterId
+      in: path
+      required: true
+      description: Unique identifier for the character
+      schema:
+        type: string
+        minLength: 1
+
+  schemas:
+    # -- Error --
+
+    ErrorResponse:
+      type: object
+      required:
+        - errorCode
+        - errorMessage
+      properties:
+        errorCode:
+          type: string
+          minLength: 1
+        errorMessage:
+          type: string
+
+    # -- Config domain --
+
+    StatMap:
+      type: object
+      additionalProperties:
+        type: number
+      description: Map of statId to numeric value. Missing stats default to 0.
+
+    ClassDef:
+      type: object
+      required:
+        - baseStats
+      additionalProperties: false
+      properties:
+        baseStats:
+          $ref: "#/components/schemas/StatMap"
+
+    GearRestrictions:
+      type: object
+      additionalProperties: false
+      not:
+        required:
+          - allowedClasses
+          - blockedClasses
+      properties:
+        allowedClasses:
+          type: array
+          items:
+            type: string
+            minLength: 1
+          uniqueItems: true
+          description: If present, only these classIds may equip this gear.
+        blockedClasses:
+          type: array
+          items:
+            type: string
+            minLength: 1
+          uniqueItems: true
+          description: If present, these classIds may NOT equip this gear.
+        requiredCharacterLevel:
+          type: integer
+          minimum: 1
+          description: Character must be at least this level to equip.
+        maxLevelDelta:
+          type: integer
+          minimum: 0
+          description: gearLevel must be <= characterLevel + maxLevelDelta.
+
+    GearDef:
+      type: object
+      required:
+        - baseStats
+        - equipPatterns
+      additionalProperties: false
+      properties:
+        baseStats:
+          $ref: "#/components/schemas/StatMap"
+        equipPatterns:
+          type: array
+          items:
+            type: array
+            items:
+              type: string
+              minLength: 1
+            minItems: 1
+          minItems: 1
+          description: Each sub-array is a valid slot occupation pattern.
+        setId:
+          type: string
+          minLength: 1
+          description: Optional reference to a set this gear belongs to.
+        restrictions:
+          $ref: "#/components/schemas/GearRestrictions"
+        setPieceCount:
+          type: integer
+          enum:
+            - 1
+            - 2
+          default: 1
+          description: How many set pieces this gear counts as. Default 1.
+
+    StatClamp:
+      type: object
+      additionalProperties: false
+      properties:
+        min:
+          type: number
+          description: Floor value for this stat.
+        max:
+          type: number
+          description: Ceiling value for this stat.
+
+    SetBonus:
+      type: object
+      required:
+        - pieces
+        - bonusStats
+      additionalProperties: false
+      properties:
+        pieces:
+          type: integer
+          minimum: 2
+          description: Number of equipped set pieces required to activate this bonus.
+        bonusStats:
+          $ref: "#/components/schemas/StatMap"
+
+    SetDef:
+      type: object
+      required:
+        - bonuses
+      additionalProperties: false
+      properties:
+        bonuses:
+          type: array
+          items:
+            $ref: "#/components/schemas/SetBonus"
+          minItems: 1
+          description: Threshold-based bonuses (e.g. 2 pieces, 4 pieces).
+
+    AlgorithmRef:
+      type: object
+      required:
+        - algorithmId
+      additionalProperties: false
+      properties:
+        algorithmId:
+          type: string
+          minLength: 1
+        params:
+          type: object
+          description: Algorithm-specific parameters. Structure depends on algorithmId.
+
+    Algorithms:
+      type: object
+      required:
+        - growth
+        - levelCostCharacter
+        - levelCostGear
+      additionalProperties: false
+      properties:
+        growth:
+          $ref: "#/components/schemas/AlgorithmRef"
+          description: Algorithm for scaling stats by level.
+        levelCostCharacter:
+          $ref: "#/components/schemas/AlgorithmRef"
+          description: Algorithm for character level-up cost.
+        levelCostGear:
+          $ref: "#/components/schemas/AlgorithmRef"
+          description: Algorithm for gear level-up cost.
+
+    GameConfig:
+      type: object
+      required:
+        - gameConfigId
+        - maxLevel
+        - stats
+        - slots
+        - classes
+        - gearDefs
+        - sets
+        - algorithms
+      additionalProperties: false
+      properties:
+        gameConfigId:
+          type: string
+          minLength: 1
+        maxLevel:
+          type: integer
+          minimum: 1
+          description: Global max level for both characters and gear.
+        stats:
+          type: array
+          items:
+            type: string
+            minLength: 1
+          minItems: 1
+          uniqueItems: true
+          description: Catalogue of statIds used across the game.
+        slots:
+          type: array
+          items:
+            type: string
+            minLength: 1
+          minItems: 1
+          uniqueItems: true
+          description: Catalogue of equipment slotIds.
+        classes:
+          type: object
+          minProperties: 1
+          additionalProperties:
+            $ref: "#/components/schemas/ClassDef"
+          description: Map of classId to class definition.
+        gearDefs:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/GearDef"
+          description: Map of gearDefId to gear definition.
+        sets:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/SetDef"
+          description: Map of setId to set definition.
+        algorithms:
+          $ref: "#/components/schemas/Algorithms"
+        statClamps:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/StatClamp"
+          description: Optional per-stat min/max clamp applied after final stat calculation.
+
+    # -- State domain --
+
+    Character:
+      type: object
+      required:
+        - classId
+        - level
+        - equipped
+      additionalProperties: false
+      properties:
+        classId:
+          type: string
+          minLength: 1
+        level:
+          type: integer
+          minimum: 1
+        equipped:
+          type: object
+          additionalProperties:
+            type: string
+            minLength: 1
+          description: Map of slotId to gearId. Empty slots are absent.
+
+    GearInstance:
+      type: object
+      required:
+        - gearDefId
+        - level
+      additionalProperties: false
+      properties:
+        gearDefId:
+          type: string
+          minLength: 1
+        level:
+          type: integer
+          minimum: 1
+        equippedBy:
+          type:
+            - string
+            - "null"
+          description: characterId if equipped, null or absent if in inventory.
+
+    Player:
+      type: object
+      required:
+        - characters
+        - gear
+      additionalProperties: false
+      properties:
+        characters:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/Character"
+          description: Map of characterId to character data.
+        gear:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/GearInstance"
+          description: Map of gearId to gear instance data (inventory + equipped).
+
+    Actor:
+      type: object
+      required:
+        - apiKey
+        - playerIds
+      additionalProperties: false
+      properties:
+        apiKey:
+          type: string
+          minLength: 1
+          description: Static API key for this actor.
+        playerIds:
+          type: array
+          items:
+            type: string
+            minLength: 1
+          description: List of playerIds owned by this actor.
+
+    # -- Transaction domain --
+
+    Transaction:
+      type: object
+      required:
+        - txId
+        - type
+        - gameInstanceId
+      additionalProperties: false
+      properties:
+        txId:
+          type: string
+          minLength: 1
+          description: Unique transaction identifier (for idempotency).
+        type:
+          type: string
+          enum:
+            - CreateActor
+            - CreatePlayer
+            - CreateCharacter
+            - CreateGear
+            - LevelUpCharacter
+            - LevelUpGear
+            - EquipGear
+            - UnequipGear
+        gameInstanceId:
+          type: string
+          minLength: 1
+        playerId:
+          type: string
+          minLength: 1
+        actorId:
+          type: string
+          minLength: 1
+          description: Required for CreateActor.
+        apiKey:
+          type: string
+          minLength: 1
+          description: Required for CreateActor.
+        classId:
+          type: string
+          minLength: 1
+          description: Required for CreateCharacter.
+        characterId:
+          type: string
+          minLength: 1
+          description: Required for CreateCharacter, LevelUpCharacter, EquipGear. Optional hint for UnequipGear.
+        gearDefId:
+          type: string
+          minLength: 1
+          description: Required for CreateGear.
+        gearId:
+          type: string
+          minLength: 1
+          description: Required for LevelUpGear, EquipGear, UnequipGear.
+        slotPattern:
+          type: array
+          items:
+            type: string
+            minLength: 1
+          minItems: 1
+          description: Optional for EquipGear — which occupation pattern to use.
+        swap:
+          type: boolean
+          description: Optional for EquipGear — if true, use swap mode instead of strict mode.
+        levels:
+          type: integer
+          minimum: 1
+          description: Optional for LevelUpCharacter / LevelUpGear — number of levels to gain. Default 1.
+      allOf:
+        - if:
+            not:
+              properties:
+                type:
+                  const: CreateActor
+              required:
+                - type
+          then:
+            required:
+              - playerId
+        - if:
+            properties:
+              type:
+                const: CreateActor
+            required:
+              - type
+          then:
+            required:
+              - actorId
+              - apiKey
+        - if:
+            properties:
+              type:
+                const: CreateCharacter
+            required:
+              - type
+          then:
+            required:
+              - classId
+              - characterId
+        - if:
+            properties:
+              type:
+                const: CreateGear
+            required:
+              - type
+          then:
+            required:
+              - gearDefId
+              - gearId
+        - if:
+            properties:
+              type:
+                const: LevelUpCharacter
+            required:
+              - type
+          then:
+            required:
+              - characterId
+        - if:
+            properties:
+              type:
+                const: LevelUpGear
+            required:
+              - type
+          then:
+            required:
+              - gearId
+        - if:
+            properties:
+              type:
+                const: EquipGear
+            required:
+              - type
+          then:
+            required:
+              - gearId
+              - characterId
+        - if:
+            properties:
+              type:
+                const: UnequipGear
+            required:
+              - type
+          then:
+            required:
+              - gearId
+
+    TransactionResult:
+      type: object
+      required:
+        - txId
+        - accepted
+        - stateVersion
+      additionalProperties: false
+      properties:
+        txId:
+          type: string
+          minLength: 1
+        accepted:
+          type: boolean
+        stateVersion:
+          type: integer
+          minimum: 0
+          description: State version after processing (same as before if rejected).
+        errorCode:
+          type: string
+          minLength: 1
+          description: Present when accepted is false.
+        errorMessage:
+          type: string
+          description: Human-readable error description.
+      if:
+        properties:
+          accepted:
+            const: false
+        required:
+          - accepted
+      then:
+        required:
+          - errorCode
+
+    # -- New response schemas --
+
+    StateVersionResponse:
+      type: object
+      required:
+        - gameInstanceId
+        - stateVersion
+      additionalProperties: false
+      properties:
+        gameInstanceId:
+          type: string
+          minLength: 1
+        stateVersion:
+          type: integer
+          minimum: 0
+
+    CharacterStats:
+      type: object
+      required:
+        - characterId
+        - classId
+        - level
+        - finalStats
+      additionalProperties: false
+      properties:
+        characterId:
+          type: string
+          minLength: 1
+        classId:
+          type: string
+          minLength: 1
+        level:
+          type: integer
+          minimum: 1
+        finalStats:
+          $ref: "#/components/schemas/StatMap"
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: >
+        Bearer token for authentication. For CreateActor transactions, use the
+        ADMIN_API_KEY. For all other endpoints, use the actor's apiKey obtained
+        via CreateActor.

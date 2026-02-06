@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "transaction_result.schema.json",
+  "title": "TransactionResult",
+  "description": "Server response to a transaction: accepted or rejected with error details.",
+  "type": "object",
+  "required": ["txId", "accepted", "stateVersion"],
+  "additionalProperties": false,
+  "properties": {
+    "txId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "accepted": {
+      "type": "boolean"
+    },
+    "stateVersion": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "State version after processing (same as before if rejected)."
+    },
+    "errorCode": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Present when accepted is false. See docs/ERROR_CODES.md for the full catalog."
+    },
+    "errorMessage": {
+      "type": "string",
+      "description": "Human-readable error description."
+    }
+  },
+  "if": {
+    "properties": { "accepted": { "const": false } },
+    "required": ["accepted"]
+  },
+  "then": {
+    "required": ["errorCode"]
+  }
+}

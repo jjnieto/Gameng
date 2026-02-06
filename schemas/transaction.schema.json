@@ -1,0 +1,142 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "transaction.schema.json",
+  "title": "Transaction",
+  "description": "Atomic command sent by a client to modify game state.",
+  "type": "object",
+  "required": ["txId", "type", "gameInstanceId"],
+  "additionalProperties": false,
+  "properties": {
+    "txId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Unique transaction identifier (for idempotency)."
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "CreateActor",
+        "CreatePlayer",
+        "CreateCharacter",
+        "CreateGear",
+        "LevelUpCharacter",
+        "LevelUpGear",
+        "EquipGear",
+        "UnequipGear"
+      ]
+    },
+    "gameInstanceId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "playerId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "classId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Required for CreateCharacter."
+    },
+    "characterId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Required for CreateCharacter, LevelUpCharacter, EquipGear. Optional hint for UnequipGear."
+    },
+    "gearDefId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Required for CreateGear."
+    },
+    "gearId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Required for LevelUpGear, EquipGear, UnequipGear."
+    },
+    "slotPattern": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "minItems": 1,
+      "description": "Optional for EquipGear: which occupation pattern to use."
+    },
+    "swap": {
+      "type": "boolean",
+      "description": "Optional for EquipGear: if true, use swap mode instead of strict mode."
+    },
+    "levels": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Optional for LevelUpCharacter / LevelUpGear: number of levels to gain. Default 1."
+    },
+    "actorId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Required for CreateActor."
+    },
+    "apiKey": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Required for CreateActor."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "not": {
+          "properties": { "type": { "const": "CreateActor" } },
+          "required": ["type"]
+        }
+      },
+      "then": { "required": ["playerId"] }
+    },
+    {
+      "if": {
+        "properties": { "type": { "const": "CreateActor" } },
+        "required": ["type"]
+      },
+      "then": { "required": ["actorId", "apiKey"] }
+    },
+    {
+      "if": {
+        "properties": { "type": { "const": "CreateCharacter" } },
+        "required": ["type"]
+      },
+      "then": { "required": ["classId", "characterId"] }
+    },
+    {
+      "if": {
+        "properties": { "type": { "const": "CreateGear" } },
+        "required": ["type"]
+      },
+      "then": { "required": ["gearDefId", "gearId"] }
+    },
+    {
+      "if": {
+        "properties": { "type": { "const": "LevelUpCharacter" } },
+        "required": ["type"]
+      },
+      "then": { "required": ["characterId"] }
+    },
+    {
+      "if": {
+        "properties": { "type": { "const": "LevelUpGear" } },
+        "required": ["type"]
+      },
+      "then": { "required": ["gearId"] }
+    },
+    {
+      "if": {
+        "properties": { "type": { "const": "EquipGear" } },
+        "required": ["type"]
+      },
+      "then": { "required": ["gearId", "characterId"] }
+    },
+    {
+      "if": {
+        "properties": { "type": { "const": "UnequipGear" } },
+        "required": ["type"]
+      },
+      "then": { "required": ["gearId"] }
+    }
+  ]
+}
