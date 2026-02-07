@@ -1,0 +1,219 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "game_config.schema.json",
+  "title": "GameConfig",
+  "description": "Immutable game configuration: stats, slots, classes, gear definitions, sets, and algorithms.",
+  "type": "object",
+  "required": [
+    "gameConfigId",
+    "maxLevel",
+    "stats",
+    "slots",
+    "classes",
+    "gearDefs",
+    "sets",
+    "algorithms"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "gameConfigId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "maxLevel": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Global max level for both characters and gear."
+    },
+    "stats": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "Catalogue of statIds used across the game."
+    },
+    "slots": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "Catalogue of equipment slotIds."
+    },
+    "classes": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "$ref": "#/definitions/ClassDef"
+      },
+      "description": "Map of classId to class definition."
+    },
+    "gearDefs": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/GearDef"
+      },
+      "description": "Map of gearDefId to gear definition."
+    },
+    "sets": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/SetDef"
+      },
+      "description": "Map of setId to set definition."
+    },
+    "algorithms": {
+      "$ref": "#/definitions/Algorithms"
+    },
+    "statClamps": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/definitions/StatClamp" },
+      "description": "Optional per-stat min/max clamp applied after final stat calculation."
+    }
+  },
+  "definitions": {
+    "StatMap": {
+      "type": "object",
+      "additionalProperties": { "type": "number" },
+      "description": "Map of statId to numeric value (float). Missing stats default to 0."
+    },
+    "ClassDef": {
+      "type": "object",
+      "required": ["baseStats"],
+      "additionalProperties": false,
+      "properties": {
+        "baseStats": { "$ref": "#/definitions/StatMap" }
+      }
+    },
+    "GearDef": {
+      "type": "object",
+      "required": ["baseStats", "equipPatterns"],
+      "additionalProperties": false,
+      "properties": {
+        "baseStats": { "$ref": "#/definitions/StatMap" },
+        "equipPatterns": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 },
+            "minItems": 1
+          },
+          "minItems": 1,
+          "description": "Each sub-array is a valid occupation pattern (list of slotIds). Gear occupies exactly the slots in one chosen pattern."
+        },
+        "setId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional reference to a set this gear belongs to."
+        },
+        "restrictions": {
+          "$ref": "#/definitions/GearRestrictions"
+        },
+        "setPieceCount": {
+          "type": "integer",
+          "enum": [1, 2],
+          "default": 1,
+          "description": "How many set pieces this gear counts as when calculating set bonuses. Default 1."
+        }
+      }
+    },
+    "GearRestrictions": {
+      "type": "object",
+      "additionalProperties": false,
+      "not": {
+        "required": ["allowedClasses", "blockedClasses"]
+      },
+      "properties": {
+        "allowedClasses": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true,
+          "description": "If present, only these classIds may equip this gear."
+        },
+        "blockedClasses": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true,
+          "description": "If present, these classIds may NOT equip this gear."
+        },
+        "requiredCharacterLevel": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Character must be at least this level to equip."
+        },
+        "maxLevelDelta": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "gearLevel must be <= characterLevel + maxLevelDelta."
+        }
+      }
+    },
+    "StatClamp": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "min": { "type": "number", "description": "Floor value for this stat." },
+        "max": { "type": "number", "description": "Ceiling value for this stat." }
+      }
+    },
+    "SetDef": {
+      "type": "object",
+      "required": ["bonuses"],
+      "additionalProperties": false,
+      "properties": {
+        "bonuses": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/SetBonus" },
+          "minItems": 1,
+          "description": "Threshold-based bonuses (e.g. 2 pieces, 4 pieces)."
+        }
+      }
+    },
+    "SetBonus": {
+      "type": "object",
+      "required": ["pieces", "bonusStats"],
+      "additionalProperties": false,
+      "properties": {
+        "pieces": {
+          "type": "integer",
+          "minimum": 2,
+          "description": "Number of equipped set pieces required to activate this bonus."
+        },
+        "bonusStats": { "$ref": "#/definitions/StatMap" }
+      }
+    },
+    "Algorithms": {
+      "type": "object",
+      "required": ["growth", "levelCostCharacter", "levelCostGear"],
+      "additionalProperties": false,
+      "properties": {
+        "growth": {
+          "$ref": "#/definitions/AlgorithmRef",
+          "description": "Algorithm for scaling stats by level."
+        },
+        "levelCostCharacter": {
+          "$ref": "#/definitions/AlgorithmRef",
+          "description": "Algorithm for character level-up cost."
+        },
+        "levelCostGear": {
+          "$ref": "#/definitions/AlgorithmRef",
+          "description": "Algorithm for gear level-up cost."
+        }
+      }
+    },
+    "AlgorithmRef": {
+      "type": "object",
+      "required": ["algorithmId"],
+      "additionalProperties": false,
+      "properties": {
+        "algorithmId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "params": {
+          "type": "object",
+          "description": "Algorithm-specific parameters. Structure depends on algorithmId."
+        }
+      }
+    }
+  }
+}

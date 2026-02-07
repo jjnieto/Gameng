@@ -137,3 +137,10 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Sandbox runtime data (keep structure via .gitkeep)
+sandbox/data/**
+!sandbox/data/**/.gitkeep
+
+nul
+NUL

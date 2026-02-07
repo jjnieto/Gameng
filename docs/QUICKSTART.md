@@ -264,6 +264,170 @@ Si hay snapshots previos, el motor ejecuta **migración best-effort** automátic
 
 ---
 
+## Sandbox
+
+El sandbox es un entorno visual para probar el motor. Incluye un **launcher** (Node/Fastify, puerto 4010) que controla el motor como child process, y una **web** (React + Vite + Tailwind, puerto 5173) como SPA.
+
+### Requisitos previos
+
+1. Compilar el motor (el launcher arranca `node dist/server.js`):
+
+```bash
+npm run build
+```
+
+2. Instalar dependencias de cada sub-app (una sola vez):
+
+```bash
+npm install --prefix sandbox/apps/launcher
+npm install --prefix sandbox/apps/web
+```
+
+### Sincronizar schemas y presets
+
+Los schemas (`schemas/game_config.schema.json`) y presets (`examples/config_*.json`) se copian automaticamente al front antes de arrancar. Si cambias un schema o un ejemplo en el repo, ejecuta:
+
+```bash
+npm run sandbox:sync
+```
+
+Esto copia:
+
+| Origen (repo root) | Destino (web app) |
+|---|---|
+| `schemas/game_config.schema.json` | `sandbox/apps/web/src/schemas/` |
+| `examples/config_minimal.json` | `sandbox/apps/web/src/presets/` |
+| `examples/config_sets.json` | `sandbox/apps/web/src/presets/` |
+
+> Los archivos en `src/schemas/` y `src/presets/` del web app **no se editan a mano** — se regeneran con `sandbox:sync`. Los scripts `sandbox:web` y `sandbox` ejecutan el sync automaticamente.
+
+### Arrancar
+
+Un solo comando (sincroniza assets, arranca launcher + web en paralelo):
+
+```bash
+npm run sandbox
+```
+
+O por separado:
+
+```bash
+npm run sandbox:launcher   # Solo launcher (puerto 4010)
+npm run sandbox:web        # Solo web (puerto 5173, incluye sync)
+```
+
+Abre `http://localhost:5173` en el navegador.
+
+### Configurar SANDBOX_ADMIN_API_KEY
+
+Para usar CreateActor/GrantResources, el launcher necesita la admin API key:
+
+**Linux / macOS / Git Bash:**
+
+```bash
+SANDBOX_ADMIN_API_KEY=mi-clave-admin npm run sandbox
+```
+
+**Windows (PowerShell):**
+
+```powershell
+$env:SANDBOX_ADMIN_API_KEY="mi-clave-admin"
+npm run sandbox
+```
+
+**Windows (cmd):**
+
+```cmd
+set SANDBOX_ADMIN_API_KEY=mi-clave-admin
+npm run sandbox
+```
+
+### Paginas del SPA
+
+**Server** (`/server`):
+
+- Editar las URLs de launcher y engine (con persistencia en localStorage)
+- Ver el estado del motor (running, pid, port, health)
+- Start / Stop / Restart con botones
+- Ver logs del motor en tiempo real (poll cada 1s, auto-scroll)
+
+**Config** (`/config`):
+
+1. Pulsa **minimal** o **sets** para cargar un preset.
+2. Pulsa **Validate** — verifica contra el JSON Schema real de GameConfig.
+3. Pulsa **Save to launcher** — guarda el JSON en `sandbox/data/configs/active.json`.
+4. Pulsa **Save + Restart engine** — guarda y reinicia el motor con la nueva config.
+5. Con el motor arrancado, pulsa **Load from engine** — carga la config activa del motor.
+
+**Admin** (`/admin`):
+
+1. Introduce la Admin API Key (la misma que `SANDBOX_ADMIN_API_KEY`).
+2. **CreateActor**: crea un actor con su API key.
+3. **GrantResources**: asigna recursos a un player existente (JSON `{"gold":100}`).
+4. **Seed Demo**: crea actor + player + grant en un click. Actualiza automaticamente los inputs de `/player`.
+5. **Load Player State**: verifica que los recursos se aplicaron.
+
+**Player** (`/player`) — smoke test:
+
+1. En `/config`, carga un preset, valida y pulsa **Save + Restart engine**.
+2. Ve a `/admin`, introduce la admin key y pulsa **Seed Demo** (crea actor + player + recursos).
+3. Ve a `/player` — los inputs ya estan rellenos por el seed.
+4. Pulsa **CreateCharacter** con un classId existente (e.g. `warrior`).
+5. Pulsa **Get Stats** — muestra stats calculados del personaje.
+6. Pulsa **Load State** — muestra characters, gear y resources.
+
+### Variables de entorno del launcher
+
+| Variable | Default | Descripcion |
+|---|---|---|
+| `SANDBOX_LAUNCHER_PORT` | `4010` | Puerto del launcher |
+| `SANDBOX_ENGINE_PORT` | `4000` | Puerto del motor |
+| `SANDBOX_CONFIG_PATH` | `sandbox/data/configs/active.json` | Ruta a la config activa |
+| `SANDBOX_SNAPSHOT_DIR` | `sandbox/data/snapshots` | Directorio de snapshots |
+| `SANDBOX_ENGINE_LOG_LEVEL` | `warn` | Nivel de log del motor |
+| `SANDBOX_ADMIN_API_KEY` | _(sin definir)_ | Admin API key para CreateActor/GrantResources |
+
+### Endpoints del launcher
+
+| Endpoint | Metodo | Descripcion |
+|---|---|---|
+| `/status` | GET | Estado del launcher y del motor (running, pid, port, config) |
+| `/logs` | GET | Logs del motor (`?limit=N`, default 200) |
+| `/engine/start` | POST | Arranca el motor (409 si ya corre) |
+| `/engine/stop` | POST | Para el motor (graceful via `/__shutdown`) |
+| `/engine/restart` | POST | Stop + start |
+| `/config` | POST | Guarda config JSON a disco (`?restart=true` para reiniciar) |
+
+### Scripts del sandbox
+
+| Comando | Descripcion |
+|---|---|
+| `npm run sandbox` | Sync + launcher + web en paralelo |
+| `npm run sandbox:launcher` | Solo launcher |
+| `npm run sandbox:web` | Sync + solo web |
+| `npm run sandbox:sync` | Copia schemas/presets al front |
+| `npm run sandbox:reset` | Limpia `sandbox/data/` (configs, snapshots, logs) |
+
+### Estructura
+
+```
+sandbox/
+  apps/
+    launcher/    # Node/TS — control del motor (Fastify, puerto 4010)
+    web/         # React + Vite + Tailwind (puerto 5173)
+      src/
+        schemas/   # (auto-generado por sandbox:sync)
+        presets/   # (auto-generado por sandbox:sync)
+  packages/
+    shared/      # tipos compartidos (futuro)
+  data/          # runtime, gitignored
+    configs/     # config activa (active.json)
+    snapshots/   # SNAPSHOT_DIR para el motor
+    logs/        # logs persistidos
+```
+
+---
+
 ## Documentación adicional
 
 | Documento | Contenido |
@@ -275,3 +439,4 @@ Si hay snapshots previos, el motor ejecuta **migración best-effort** automátic
 | `openapi/openapi.yaml` | Especificación OpenAPI 3.1.0 |
 | `schemas/*.schema.json` | Contratos JSON Schema draft-07 |
 | `examples/tx_examples.md` | Ejemplos de transacciones JSON |
+| [`sandbox/SANDBOX_DELIVERY_PLAN.md`](sandbox/SANDBOX_DELIVERY_PLAN.md) | Plan de delivery del sandbox visual |

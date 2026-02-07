@@ -1,0 +1,56 @@
+{
+  "gameConfigId": "minimal_v1",
+  "maxLevel": 10,
+  "stats": ["strength", "hp"],
+  "slots": ["right_hand", "off_hand"],
+  "classes": {
+    "warrior": {
+      "baseStats": { "strength": 5, "hp": 20 }
+    }
+  },
+  "gearDefs": {
+    "sword_basic": {
+      "baseStats": { "strength": 3 },
+      "equipPatterns": [["right_hand"]]
+    },
+    "greatsword": {
+      "baseStats": { "strength": 5, "hp": 5 },
+      "equipPatterns": [["right_hand", "off_hand"]]
+    },
+    "versatile_sword": {
+      "baseStats": { "strength": 4 },
+      "equipPatterns": [["right_hand"], ["off_hand"]]
+    },
+    "elite_sword": {
+      "baseStats": { "strength": 8 },
+      "equipPatterns": [["right_hand"]],
+      "restrictions": {
+        "allowedClasses": ["warrior"],
+        "requiredCharacterLevel": 3
+      }
+    },
+    "scaled_shield": {
+      "baseStats": { "hp": 10 },
+      "equipPatterns": [["off_hand"]],
+      "restrictions": {
+        "maxLevelDelta": 0
+      }
+    },
+    "cursed_blade": {
+      "baseStats": { "strength": 6 },
+      "equipPatterns": [["right_hand"]],
+      "restrictions": {
+        "blockedClasses": ["warrior"]
+      }
+    }
+  },
+  "sets": {},
+  "algorithms": {
+    "growth": {
+      "algorithmId": "linear",
+      "params": { "perLevelMultiplier": 0.1, "additivePerLevel": { "hp": 1 } }
+    },
+    "levelCostCharacter": { "algorithmId": "flat", "params": {} },
+    "levelCostGear": { "algorithmId": "flat", "params": {} }
+  }
+}
