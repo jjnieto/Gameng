@@ -3,16 +3,20 @@ import healthRoutes from "./routes/health.js";
 import txRoutes from "./routes/tx.js";
 import playerRoutes from "./routes/player.js";
 import statsRoutes from "./routes/stats.js";
+import stateVersionRoutes from "./routes/state-version.js";
+import configRoutes from "./routes/config.js";
 import { createGameInstanceStore } from "./state.js";
 import { loadGameConfig } from "./config-loader.js";
 import { SnapshotManager } from "./snapshot-manager.js";
 import { migrateStateToConfig } from "./migrator.js";
+import { DEFAULT_MAX_IDEMPOTENCY_ENTRIES } from "./idempotency-store.js";
 
 export interface AppOptions {
   configPath?: string;
   snapshotDir?: string;
   snapshotIntervalMs?: number;
   adminApiKey?: string;
+  maxIdempotencyEntries?: number;
 }
 
 export function createApp(options?: string | AppOptions) {
@@ -29,6 +33,11 @@ export function createApp(options?: string | AppOptions) {
     (process.env.SNAPSHOT_INTERVAL_MS
       ? Number(process.env.SNAPSHOT_INTERVAL_MS)
       : undefined);
+  const maxIdempotencyEntries =
+    opts.maxIdempotencyEntries ??
+    (process.env.GAMENG_MAX_IDEMPOTENCY_ENTRIES
+      ? Number(process.env.GAMENG_MAX_IDEMPOTENCY_ENTRIES)
+      : DEFAULT_MAX_IDEMPOTENCY_ENTRIES);
 
   const app = Fastify({
     logger: {
@@ -73,7 +82,9 @@ export function createApp(options?: string | AppOptions) {
 
   app.decorate("gameInstances", store);
   app.decorate("gameConfigs", configs);
+  app.decorate("activeConfig", config);
   app.decorate("adminApiKey", adminApiKey);
+  app.decorate("txIdCacheMaxEntries", maxIdempotencyEntries);
 
   // flushSnapshots: manual trigger for tests and graceful shutdown
   const mgr = snapshotManager;
@@ -87,6 +98,8 @@ export function createApp(options?: string | AppOptions) {
   app.register(txRoutes);
   app.register(playerRoutes);
   app.register(statsRoutes);
+  app.register(stateVersionRoutes);
+  app.register(configRoutes);
 
   // Periodic flush
   let intervalHandle: ReturnType<typeof setInterval> | undefined;

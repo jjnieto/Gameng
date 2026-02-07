@@ -22,6 +22,14 @@ Si hay contradicción entre documentos:
 4) luego el resto de `docs/` (WORKFLOW/SEMANTICS/INVARIANTS/ARCHITECTURE/TESTING),
 5) y por último cualquier nota externa.
 
+## Filosofía arquitectónica
+
+Este motor **no es un blockchain**, ni un sistema tipo ledger, ni usa event sourcing. No existe replay ni log histórico de transacciones.
+
+El modelo es un **servidor autoritativo** con estado completo en memoria por `gameInstanceId`, persistido periódicamente por **snapshots**. La idempotencia por `txId` usa un **cache acotado FIFO** para detección de duplicados — no es un log ni tiene semántica de replay.
+
+Al restaurar un snapshot, se aplica **migración best-effort** para adaptar el estado a la config actual.
+
 ## Convenciones de trabajo
 
 - Cualquier decisión nueva o aclaración de semántica debe añadirse en `docs/SEMANTICS.md` (y si afecta a contratos, también en `schemas/`, `openapi/` y `examples/`).

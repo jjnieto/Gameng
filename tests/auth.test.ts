@@ -17,6 +17,58 @@ interface CharacterStats {
   finalStats: Record<string, number>;
 }
 
+describe("Authorization — ADMIN_API_KEY not configured", () => {
+  let app: FastifyInstance;
+
+  beforeAll(async () => {
+    // No adminApiKey passed — admin operations must fail
+    app = createApp();
+    await app.ready();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it("CreateActor fails with 401 UNAUTHORIZED when ADMIN_API_KEY is not configured", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/instance_001/tx",
+      headers: { authorization: "Bearer some-key" },
+      payload: {
+        txId: "no_admin_ca",
+        type: "CreateActor",
+        gameInstanceId: "instance_001",
+        actorId: "actor_1",
+        apiKey: "key_1",
+      },
+    });
+
+    expect(res.statusCode).toBe(401);
+    const body = res.json<{ errorCode: string }>();
+    expect(body.errorCode).toBe("UNAUTHORIZED");
+  });
+
+  it("GrantResources fails with 401 UNAUTHORIZED when ADMIN_API_KEY is not configured", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/instance_001/tx",
+      headers: { authorization: "Bearer some-key" },
+      payload: {
+        txId: "no_admin_gr",
+        type: "GrantResources",
+        gameInstanceId: "instance_001",
+        playerId: "player_1",
+        resources: { gold: 100 },
+      },
+    });
+
+    expect(res.statusCode).toBe(401);
+    const body = res.json<{ errorCode: string }>();
+    expect(body.errorCode).toBe("UNAUTHORIZED");
+  });
+});
+
 describe("Authorization — API Key (Bearer Token)", () => {
   let app: FastifyInstance;
   const ADMIN_KEY = "test-admin-key-auth";

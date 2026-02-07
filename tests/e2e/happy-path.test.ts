@@ -295,14 +295,17 @@ describe("E2E — Happy Path (config_minimal)", () => {
       expectAccepted(res, "EquipGear elite at level 3");
     }, srv.logs);
 
-    await step("GET stats → elite_sword bonus (str=5+8=13)", async () => {
+    await step("GET stats → scaled class + elite_sword (str=6+8=14)", async () => {
+      // linear growth: perLevelMultiplier=0.1, additivePerLevel={hp:1}
+      // class at level 3: str = floor(5 * (1 + 0.1*2)) = floor(5*1.2) = 6
+      // elite_sword at gear level 1: str = 8 (no scaling at level 1)
       const res = await getStats(
         srv.baseUrl,
         API_KEY,
         "instance_001",
         "char_1",
       );
-      expect(res.body.finalStats.strength).toBe(13);
+      expect(res.body.finalStats.strength).toBe(14);
       expect(res.body.level).toBe(3);
     }, srv.logs);
   });

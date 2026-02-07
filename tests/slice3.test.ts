@@ -274,7 +274,7 @@ describe("Slice 3 — Characters + Level + Base Stats", () => {
   });
 
   describe("GET /:gameInstanceId/character/:characterId/stats", () => {
-    it("returns base stats for level-1 character (default growth = no scaling)", async () => {
+    it("returns base stats for level-1 character (linear growth, level 1 = identity)", async () => {
       // char_2 is still level 1
       const res = await app.inject({
         method: "GET",
@@ -290,8 +290,11 @@ describe("Slice 3 — Characters + Level + Base Stats", () => {
       expect(body.finalStats).toEqual({ strength: 5, hp: 20 });
     });
 
-    it("returns same base stats at higher level (default growth = no scaling)", async () => {
+    it("returns linearly scaled stats at level 10", async () => {
       // char_1 is level 10
+      // linear growth: perLevelMultiplier=0.1, additivePerLevel={hp:1}
+      // str = floor(5 * (1 + 0.1*9)) = floor(5 * 1.9) = 9
+      // hp  = floor(20 * (1 + 0.1*9) + 1*9) = floor(20*1.9 + 9) = 47
       const res = await app.inject({
         method: "GET",
         url: "/instance_001/character/char_1/stats",
@@ -303,8 +306,7 @@ describe("Slice 3 — Characters + Level + Base Stats", () => {
       expect(body.characterId).toBe("char_1");
       expect(body.classId).toBe("warrior");
       expect(body.level).toBe(10);
-      // Default growth: finalStats = baseStats regardless of level
-      expect(body.finalStats).toEqual({ strength: 5, hp: 20 });
+      expect(body.finalStats).toEqual({ strength: 9, hp: 47 });
     });
 
     it("response validates against CharacterStats schema (via game_state definitions)", async () => {

@@ -1,0 +1,7 @@
+{
+  "txId": "grant_001",
+  "type": "GrantResources",
+  "gameInstanceId": "instance_001",
+  "playerId": "player_1",
+  "resources": { "xp": 500, "gold": 200 }
+}

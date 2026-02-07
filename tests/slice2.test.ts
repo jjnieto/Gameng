@@ -212,7 +212,7 @@ describe("Slice 2 — Players + Ownership", () => {
 
       expect(response.statusCode).toBe(200);
       const body = response.json<Player>();
-      expect(body).toEqual({ characters: {}, gear: {} });
+      expect(body).toEqual({ characters: {}, gear: {}, resources: {} });
     });
 
     it("returns 403 with OWNERSHIP_VIOLATION for nonexistent player (ownership checked first)", async () => {

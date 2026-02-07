@@ -20,7 +20,7 @@ En caso de conflicto entre documentos, aplicar el orden indicado en `docs/SOURCE
   - `schemas/` (JSON Schema)
   - `openapi/` (OpenAPI)
   - `examples/` (golden files)
-  - `tests/` (replay/smoke)
+  - `tests/` (sequence/smoke)
 - **Servidor autoritativo:** el cliente no persiste estado; solo envía transacciones y realiza consultas.
 - **Data-driven:** el contenido del juego y reglas configurables se describen en JSON.
 - **No adelantarse al slice:** no se implementan features fuera del slice/entregable actual.
@@ -40,7 +40,7 @@ Para cualquier tarea/slice, seguir este orden:
 5. **Código** (`src/`)  
    Implementación del comportamiento.
 6. **Tests** (`tests/`)  
-   Unit/integration + replay tests; actualizar expected results.
+   Unit/integration + sequence tests; actualizar expected results.
 
 > Regla: si tocas schemas, normalmente debes tocar OpenAPI y examples/tests.
 

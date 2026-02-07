@@ -28,7 +28,7 @@ Definir, por fase y por slice vertical, el entregable verificable esperado (docu
 ## Fase 1 — Concreción final de requisitos y esquemas
 
 ### 1.1 Semántica del dominio
-- `docs/01_semantics_addendum.md`: decisiones cerradas: conflicto al equipar (estricto/swap), semántica de restricciones de nivel, conteo de sets con gear multi-slot, clamp/negativos/redondeo, durabilidad (pérdida aceptable vs log), idempotencia (txId) y modelo de extensibilidad (DSL vs catálogo vs plugins).
+- `docs/01_semantics_addendum.md`: decisiones cerradas: conflicto al equipar (estricto/swap), semántica de restricciones de nivel, conteo de sets con gear multi-slot, clamp/negativos/redondeo, durabilidad (**decidido: pérdida aceptable entre snapshots; sin log de transacciones ni replay**), idempotencia (txId — cache acotado anti-duplicados) y modelo de extensibilidad (DSL vs catálogo vs plugins).
 
 ### 1.2 Esquemas y ejemplos golden
 - `schemas/game_config.schema.json`

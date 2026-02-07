@@ -1,5 +1,12 @@
 import type { FastifyInstance, FastifyPluginCallback } from "fastify";
+import type { GameState } from "../state.js";
 import { resolveActor, actorOwnsPlayer } from "../auth.js";
+import {
+  computeTotalCost,
+  hasResources,
+  deductResources,
+} from "../algorithms/level-cost.js";
+import { IdempotencyStore } from "../idempotency-store.js";
 
 interface TxParams {
   gameInstanceId: string;
@@ -16,11 +23,24 @@ interface TxBody {
   gearDefId?: string;
   levels?: number;
   slotPattern?: string[];
+  swap?: boolean;
   actorId?: string;
   apiKey?: string;
+  resources?: Record<string, number>;
 }
 
 const txRoutes: FastifyPluginCallback = (app: FastifyInstance, _opts, done) => {
+  const idempotencyStores = new Map<string, IdempotencyStore>();
+
+  function getIdempotencyStore(state: GameState): IdempotencyStore {
+    let store = idempotencyStores.get(state.gameInstanceId);
+    if (!store) {
+      store = new IdempotencyStore(state.txIdCache, app.txIdCacheMaxEntries);
+      idempotencyStores.set(state.gameInstanceId, store);
+    }
+    return store;
+  }
+
   app.post<{ Params: TxParams; Body: TxBody }>(
     "/:gameInstanceId/tx",
     (request, reply) => {
@@ -45,51 +65,94 @@ const txRoutes: FastifyPluginCallback = (app: FastifyInstance, _opts, done) => {
         });
       }
 
+      // --- Idempotency check ---
+      const idemStore = getIdempotencyStore(state);
+      const cached = idemStore.get(body.txId);
+      if (cached) {
+        return reply.code(cached.statusCode).send(cached.body);
+      }
+
+      // --- Wrap reply.send to cache ALL responses ---
+      const originalSend = reply.send.bind(reply);
+      reply.send = ((payload: unknown) => {
+        idemStore.record(body.txId, reply.statusCode, payload as Record<string, unknown>);
+        return originalSend(payload);
+      }) as typeof reply.send;
+
       switch (body.type) {
-        case "CreateActor": {
-          // CreateActor requires ADMIN_API_KEY via Bearer token
+        case "CreateActor":
+        case "GrantResources": {
+          // Both ALWAYS require ADMIN_API_KEY via Bearer token.
+          // If adminApiKey is not configured, all admin operations fail.
           const adminKey = app.adminApiKey;
-          if (adminKey) {
-            const authHeader = request.headers.authorization;
-            if (
-              !authHeader ||
-              typeof authHeader !== "string" ||
-              !/^Bearer\s+/i.test(authHeader) ||
-              authHeader.replace(/^Bearer\s+/i, "") !== adminKey
-            ) {
-              return reply.code(401).send({
-                errorCode: "UNAUTHORIZED",
-                errorMessage: "Missing or invalid admin API key.",
-              });
-            }
-          }
-
-          const actorId = body.actorId!;
-          const apiKey = body.apiKey!;
-
-          if (state.actors[actorId]) {
-            return reply.send({
-              txId: body.txId,
-              accepted: false,
-              stateVersion: state.stateVersion,
-              errorCode: "ALREADY_EXISTS",
-              errorMessage: `Actor '${actorId}' already exists.`,
+          const authHeader = request.headers.authorization;
+          if (
+            !adminKey ||
+            !authHeader ||
+            typeof authHeader !== "string" ||
+            !/^Bearer\s+/i.test(authHeader) ||
+            authHeader.replace(/^Bearer\s+/i, "") !== adminKey
+          ) {
+            return reply.code(401).send({
+              errorCode: "UNAUTHORIZED",
+              errorMessage: "Missing or invalid admin API key.",
             });
           }
 
-          for (const existing of Object.values(state.actors)) {
-            if (existing.apiKey === apiKey) {
+          if (body.type === "CreateActor") {
+            const actorId = body.actorId!;
+            const apiKey = body.apiKey!;
+
+            if (state.actors[actorId]) {
               return reply.send({
                 txId: body.txId,
                 accepted: false,
                 stateVersion: state.stateVersion,
-                errorCode: "DUPLICATE_API_KEY",
-                errorMessage: `Another actor already uses this apiKey.`,
+                errorCode: "ALREADY_EXISTS",
+                errorMessage: `Actor '${actorId}' already exists.`,
               });
             }
+
+            for (const existing of Object.values(state.actors)) {
+              if (existing.apiKey === apiKey) {
+                return reply.send({
+                  txId: body.txId,
+                  accepted: false,
+                  stateVersion: state.stateVersion,
+                  errorCode: "DUPLICATE_API_KEY",
+                  errorMessage: `Another actor already uses this apiKey.`,
+                });
+              }
+            }
+
+            state.actors[actorId] = { apiKey, playerIds: [] };
+            state.stateVersion++;
+
+            return reply.send({
+              txId: body.txId,
+              accepted: true,
+              stateVersion: state.stateVersion,
+            });
           }
 
-          state.actors[actorId] = { apiKey, playerIds: [] };
+          // GrantResources
+          const grantPlayer = state.players[body.playerId!];
+          if (!grantPlayer) {
+            return reply.send({
+              txId: body.txId,
+              accepted: false,
+              stateVersion: state.stateVersion,
+              errorCode: "PLAYER_NOT_FOUND",
+              errorMessage: `Player '${body.playerId!}' not found.`,
+            });
+          }
+
+          const grantResources = body.resources ?? {};
+          if (!grantPlayer.resources) grantPlayer.resources = {};
+          for (const [resourceId, amount] of Object.entries(grantResources)) {
+            grantPlayer.resources[resourceId] =
+              (grantPlayer.resources[resourceId] ?? 0) + amount;
+          }
           state.stateVersion++;
 
           return reply.send({
@@ -140,7 +203,7 @@ const txRoutes: FastifyPluginCallback = (app: FastifyInstance, _opts, done) => {
             });
           }
 
-          state.players[playerId] = { characters: {}, gear: {} };
+          state.players[playerId] = { characters: {}, gear: {}, resources: {} };
           resolved.actor.playerIds.push(playerId);
           state.stateVersion++;
 
@@ -250,6 +313,38 @@ const txRoutes: FastifyPluginCallback = (app: FastifyInstance, _opts, done) => {
             });
           }
 
+          // Cost validation
+          let charCost: Record<string, number>;
+          try {
+            charCost = computeTotalCost(
+              character.level,
+              levels,
+              lvlConfig.algorithms.levelCostCharacter,
+            );
+          } catch (err) {
+            return reply.code(500).send({
+              errorCode: "INVALID_CONFIG_REFERENCE",
+              errorMessage:
+                err instanceof Error
+                  ? err.message
+                  : "Level cost algorithm error.",
+            });
+          }
+
+          const charWallet = player.resources ?? {};
+          if (!hasResources(charWallet, charCost)) {
+            return reply.send({
+              txId: body.txId,
+              accepted: false,
+              stateVersion: state.stateVersion,
+              errorCode: "INSUFFICIENT_RESOURCES",
+              errorMessage: `Not enough resources to level up character from ${character.level} to ${newLevel}.`,
+            });
+          }
+
+          // Atomic: deduct resources + level up
+          if (!player.resources) player.resources = {};
+          deductResources(player.resources, charCost);
           character.level = newLevel;
           state.stateVersion++;
 
@@ -355,6 +450,38 @@ const txRoutes: FastifyPluginCallback = (app: FastifyInstance, _opts, done) => {
             });
           }
 
+          // Cost validation
+          let gearCost: Record<string, number>;
+          try {
+            gearCost = computeTotalCost(
+              gearInst.level,
+              gearLevels,
+              gearLvlConfig.algorithms.levelCostGear,
+            );
+          } catch (err) {
+            return reply.code(500).send({
+              errorCode: "INVALID_CONFIG_REFERENCE",
+              errorMessage:
+                err instanceof Error
+                  ? err.message
+                  : "Level cost algorithm error.",
+            });
+          }
+
+          const gearWallet = player.resources ?? {};
+          if (!hasResources(gearWallet, gearCost)) {
+            return reply.send({
+              txId: body.txId,
+              accepted: false,
+              stateVersion: state.stateVersion,
+              errorCode: "INSUFFICIENT_RESOURCES",
+              errorMessage: `Not enough resources to level up gear from ${gearInst.level} to ${newGearLevel}.`,
+            });
+          }
+
+          // Atomic: deduct resources + level up
+          if (!player.resources) player.resources = {};
+          deductResources(player.resources, gearCost);
           gearInst.level = newGearLevel;
           state.stateVersion++;
 
@@ -543,16 +670,41 @@ const txRoutes: FastifyPluginCallback = (app: FastifyInstance, _opts, done) => {
             });
           }
 
-          // Check all slots are free (strict mode)
-          for (const slotId of targetPattern) {
-            if (equipChar.equipped[slotId]) {
-              return reply.send({
-                txId: body.txId,
-                accepted: false,
-                stateVersion: state.stateVersion,
-                errorCode: "SLOT_OCCUPIED",
-                errorMessage: `Slot '${slotId}' is already occupied.`,
-              });
+          // Check slots and optionally swap
+          if (body.swap) {
+            // Swap mode: auto-unequip any gear occupying target slots
+            const gearsToUnequip = new Set<string>();
+            for (const slotId of targetPattern) {
+              const occupyingGearId = equipChar.equipped[slotId];
+              if (occupyingGearId) {
+                gearsToUnequip.add(occupyingGearId);
+              }
+            }
+
+            // Unequip each conflicting gear (clear ALL its slots, not just the conflicting ones)
+            for (const oldGearId of gearsToUnequip) {
+              const oldGearInst = player.gear[oldGearId];
+              for (const [slotId, gId] of Object.entries(equipChar.equipped)) {
+                if (gId === oldGearId) {
+                  delete equipChar.equipped[slotId];
+                }
+              }
+              if (oldGearInst) {
+                oldGearInst.equippedBy = null;
+              }
+            }
+          } else {
+            // Strict mode: reject if any target slot is occupied
+            for (const slotId of targetPattern) {
+              if (equipChar.equipped[slotId]) {
+                return reply.send({
+                  txId: body.txId,
+                  accepted: false,
+                  stateVersion: state.stateVersion,
+                  errorCode: "SLOT_OCCUPIED",
+                  errorMessage: `Slot '${slotId}' is already occupied.`,
+                });
+              }
             }
           }
 

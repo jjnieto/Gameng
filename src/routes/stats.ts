@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyPluginCallback } from "fastify";
 import { resolveActor, actorOwnsPlayer } from "../auth.js";
+import { applyGrowth } from "../algorithms/growth.js";
 
 interface StatsParams {
   gameInstanceId: string;
@@ -28,7 +29,7 @@ const statsRoutes: FastifyPluginCallback = (
       let foundCharacter:
         | { classId: string; level: number; equipped: Record<string, string> }
         | undefined;
-      let foundPlayer: { gear: Record<string, { gearDefId: string }> } | undefined;
+      let foundPlayer: { gear: Record<string, { gearDefId: string; level: number }> } | undefined;
       let foundPlayerId: string | undefined;
       for (const [pid, player] of Object.entries(state.players)) {
         const char = player.characters[characterId];
@@ -71,13 +72,35 @@ const statsRoutes: FastifyPluginCallback = (
       }
 
       const classDef = config.classes[foundCharacter.classId];
-      // Default growth: finalStats = baseStats (no scaling)
-      const finalStats: Record<string, number> = {};
-      for (const statId of config.stats) {
-        finalStats[statId] = classDef?.baseStats[statId] ?? 0;
+      const growthRef = config.algorithms.growth;
+
+      // Step 1+2: Class base stats scaled by character level
+      let classScaled: Record<string, number>;
+      try {
+        const classBase: Record<string, number> = {};
+        for (const statId of config.stats) {
+          classBase[statId] = classDef?.baseStats[statId] ?? 0;
+        }
+        classScaled = applyGrowth(
+          classBase,
+          foundCharacter.level,
+          growthRef,
+        );
+      } catch (err) {
+        return reply.code(500).send({
+          errorCode: "INVALID_CONFIG_REFERENCE",
+          errorMessage:
+            err instanceof Error ? err.message : "Growth algorithm error.",
+        });
       }
 
-      // Sum gear base stats from equipped gear (deduplicate for multi-slot)
+      // Initialize finalStats from scaled class stats
+      const finalStats: Record<string, number> = {};
+      for (const statId of config.stats) {
+        finalStats[statId] = classScaled[statId] ?? 0;
+      }
+
+      // Step 3: Gear base stats scaled by gear level (deduplicate for multi-slot)
       // Also accumulate set piece counts for set bonus calculation
       const setPieceCounts: Record<string, number> = {};
       if (foundPlayer) {
@@ -89,8 +112,23 @@ const statsRoutes: FastifyPluginCallback = (
           if (!gearInst) continue;
           const gearDef = config.gearDefs[gearInst.gearDefId];
           if (!gearDef) continue;
-          for (const statId of config.stats) {
-            finalStats[statId] += gearDef.baseStats[statId] ?? 0;
+          try {
+            const gearScaled = applyGrowth(
+              gearDef.baseStats,
+              gearInst.level,
+              growthRef,
+            );
+            for (const statId of config.stats) {
+              finalStats[statId] += gearScaled[statId] ?? 0;
+            }
+          } catch (err) {
+            return reply.code(500).send({
+              errorCode: "INVALID_CONFIG_REFERENCE",
+              errorMessage:
+                err instanceof Error
+                  ? err.message
+                  : "Growth algorithm error.",
+            });
           }
           // Accumulate set piece count
           if (gearDef.setId) {
@@ -101,7 +139,7 @@ const statsRoutes: FastifyPluginCallback = (
         }
       }
 
-      // Apply set bonuses
+      // Step 4: Apply set bonuses (flat, not scaled)
       for (const [setId, pieceCount] of Object.entries(setPieceCounts)) {
         const setDef = config.sets[setId];
         if (!setDef) continue; // silently ignore unknown setId
@@ -110,6 +148,20 @@ const statsRoutes: FastifyPluginCallback = (
             for (const statId of config.stats) {
               finalStats[statId] += bonus.bonusStats[statId] ?? 0;
             }
+          }
+        }
+      }
+
+      // Step 5: Apply stat clamps (min/max per stat)
+      if (config.statClamps) {
+        for (const statId of config.stats) {
+          const clamp = config.statClamps[statId];
+          if (!clamp) continue;
+          if (clamp.min != null && finalStats[statId] < clamp.min) {
+            finalStats[statId] = clamp.min;
+          }
+          if (clamp.max != null && finalStats[statId] > clamp.max) {
+            finalStats[statId] = clamp.max;
           }
         }
       }

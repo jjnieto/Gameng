@@ -21,6 +21,7 @@ export interface ServerOptions {
   configPath?: string;
   snapshotDir?: string;
   snapshotIntervalMs?: number;
+  logLevel?: string;
   extraEnv?: Record<string, string>;
 }
 
@@ -104,7 +105,7 @@ export async function startServer(
     HOST: "127.0.0.1",
     SNAPSHOT_DIR: snapshotDir,
     SNAPSHOT_INTERVAL_MS: String(opts.snapshotIntervalMs ?? 0),
-    LOG_LEVEL: "warn",
+    LOG_LEVEL: opts.logLevel ?? process.env.GAMENG_E2E_LOG_LEVEL ?? "warn",
     GAMENG_E2E: "1",
     ...(configPath ? { CONFIG_PATH: configPath } : {}),
     ...(opts.extraEnv ?? {}),

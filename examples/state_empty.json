@@ -3,5 +3,6 @@
   "gameConfigId": "minimal_v1",
   "stateVersion": 0,
   "players": {},
-  "actors": {}
+  "actors": {},
+  "txIdCache": []
 }

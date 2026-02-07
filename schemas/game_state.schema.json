@@ -34,6 +34,11 @@
         "$ref": "#/definitions/Actor"
       },
       "description": "Map of actorId to actor data. Optional for backward compatibility."
+    },
+    "txIdCache": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/TxIdCacheEntry" },
+      "description": "Bounded FIFO cache of recent transaction results for idempotency (anti-duplicate)."
     }
   },
   "definitions": {
@@ -55,6 +60,13 @@
             "$ref": "#/definitions/GearInstance"
           },
           "description": "Map of gearId to gear instance data (inventory + equipped)."
+        },
+        "resources": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          },
+          "description": "Map of resourceId to amount. Absent or empty means no resources."
         }
       }
     },
@@ -116,6 +128,16 @@
             "minLength": 1
           }
         }
+      }
+    },
+    "TxIdCacheEntry": {
+      "type": "object",
+      "required": ["txId", "statusCode", "body"],
+      "additionalProperties": false,
+      "properties": {
+        "txId": { "type": "string", "minLength": 1 },
+        "statusCode": { "type": "integer", "minimum": 100, "maximum": 599 },
+        "body": { "type": "object", "description": "The cached HTTP response body." }
       }
     }
   }

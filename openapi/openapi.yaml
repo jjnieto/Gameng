@@ -52,7 +52,9 @@ paths:
     get:
       operationId: getConfig
       summary: Get game configuration
-      description: Returns the complete immutable game configuration for the given instance.
+      description: >
+        Returns the complete immutable game configuration for the given instance.
+        No authentication required (SEMANTICS Decision #16).
       tags:
         - config
       parameters:
@@ -72,17 +74,26 @@ paths:
                   - hp
                 slots:
                   - right_hand
+                  - off_hand
                 classes:
                   warrior:
                     baseStats:
                       strength: 5
                       hp: 20
-                gearDefs: {}
+                gearDefs:
+                  sword_basic:
+                    baseStats:
+                      strength: 3
+                    equipPatterns:
+                      - - right_hand
                 sets: {}
                 algorithms:
                   growth:
-                    algorithmId: flat
-                    params: {}
+                    algorithmId: linear
+                    params:
+                      perLevelMultiplier: 0.1
+                      additivePerLevel:
+                        hp: 1
                   levelCostCharacter:
                     algorithmId: flat
                     params: {}
@@ -137,8 +148,10 @@ paths:
         result regardless of whether the transaction was accepted or rejected.
         Domain errors are reported via `accepted: false` and `errorCode` in the
         response body. Returns 400 only for malformed or unparseable request bodies.
-        CreateActor requires the ADMIN_API_KEY via Bearer token; all other
-        transaction types require a valid actor Bearer token.
+        CreateActor and GrantResources require the ADMIN_API_KEY via Bearer token;
+        all other transaction types require a valid actor Bearer token.
+        Idempotent by txId: if the same txId is submitted again, the cached
+        response is returned without re-executing the transaction.
       tags:
         - transaction
       security:
@@ -193,7 +206,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
-          description: Missing or invalid Bearer token. For CreateActor, the ADMIN_API_KEY is required. For all other types, a valid actor token is required.
+          description: Missing or invalid Bearer token. For CreateActor and GrantResources, the ADMIN_API_KEY is required. For all other types, a valid actor token is required.
           content:
             application/json:
               schema:
@@ -310,7 +323,7 @@ paths:
                 classId: warrior
                 level: 3
                 finalStats:
-                  strength: 12.5
+                  strength: 12
                   hp: 45
         "404":
           description: Game instance or character not found
@@ -661,24 +674,11 @@ components:
           additionalProperties:
             $ref: "#/components/schemas/GearInstance"
           description: Map of gearId to gear instance data (inventory + equipped).
-
-    Actor:
-      type: object
-      required:
-        - apiKey
-        - playerIds
-      additionalProperties: false
-      properties:
-        apiKey:
-          type: string
-          minLength: 1
-          description: Static API key for this actor.
-        playerIds:
-          type: array
-          items:
-            type: string
-            minLength: 1
-          description: List of playerIds owned by this actor.
+        resources:
+          type: object
+          additionalProperties:
+            type: number
+          description: Map of resourceId to amount. Optional.
 
     # -- Transaction domain --
 
@@ -705,6 +705,7 @@ components:
             - LevelUpGear
             - EquipGear
             - UnequipGear
+            - GrantResources
         gameInstanceId:
           type: string
           minLength: 1
@@ -749,6 +750,11 @@ components:
           type: integer
           minimum: 1
           description: Optional for LevelUpCharacter / LevelUpGear — number of levels to gain. Default 1.
+        resources:
+          type: object
+          additionalProperties:
+            type: number
+          description: Required for GrantResources — map of resourceId to amount.
       allOf:
         - if:
             not:
@@ -827,6 +833,16 @@ components:
           then:
             required:
               - gearId
+        - if:
+            properties:
+              type:
+                const: GrantResources
+            required:
+              - type
+          then:
+            required:
+              - playerId
+              - resources
 
     TransactionResult:
       type: object

@@ -458,9 +458,11 @@ describe("Slice 9B — Best-effort migration on snapshot restore", () => {
       });
       expect(statsRes.statusCode).toBe(200);
       const stats = statsRes.json<{ finalStats: Record<string, number> }>();
-      // warrior base: strength=5, hp=20; sword_basic: strength=3
-      expect(stats.finalStats.strength).toBe(8);
-      expect(stats.finalStats.hp).toBe(20);
+      // warrior at level 3 (linear: mult=0.1, additive={hp:1}):
+      //   str = floor(5*1.2) = 6, hp = floor(20*1.2+2) = 26
+      // sword_basic at level 1: strength=3
+      expect(stats.finalStats.strength).toBe(9);
+      expect(stats.finalStats.hp).toBe(26);
 
       await app.close();
     });
@@ -609,9 +611,10 @@ describe("Slice 9B — Best-effort migration on snapshot restore", () => {
         finalStats: Record<string, number>;
       }>();
       expect(stats.classId).toBe("mage");
-      // Orphaned class base=0 for all stats; sword_basic adds strength=3
+      // Orphaned class base=0 for all stats; linear growth additive hp=1 at level 3:
+      //   str = floor(0*1.2) + 3 = 3, hp = floor(0*1.2 + 1*2) = 2
       expect(stats.finalStats.strength).toBe(3);
-      expect(stats.finalStats.hp).toBe(0);
+      expect(stats.finalStats.hp).toBe(2);
 
       await app.close();
     });

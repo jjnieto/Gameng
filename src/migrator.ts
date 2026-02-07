@@ -30,6 +30,11 @@ export function migrateStateToConfig(
     migratedState.actors = {};
   }
 
+  // Normalize txIdCache for legacy snapshots that don't have it
+  if (!(migratedState as unknown as { txIdCache?: unknown }).txIdCache) {
+    migratedState.txIdCache = [];
+  }
+
   const report: MigrationReport = {
     gameInstanceId: state.gameInstanceId,
     originalConfigId: state.gameConfigId,

@@ -42,8 +42,8 @@ El cliente **no guarda estado**: solo envía transacciones y consulta resultados
 - Primeros **golden files** de ejemplo (config mínima + casos esperados de stats).
 
 ### Decisiones a cerrar
-- Nivel de durabilidad: ¿se acepta pérdida entre snapshots? (si no, se necesita un **log de transacciones**).
-- Modelo de extensibilidad “sin tocar código”: **DSL declarativa** vs **catálogo fijo parametrizable** vs **plugins**.
+- Nivel de durabilidad: ¿se acepta pérdida entre snapshots? **→ Decidido: sí, se acepta pérdida entre snapshots.** No se implementa log de transacciones ni replay. La persistencia es exclusivamente por snapshots periódicos. La idempotencia por txId usa un cache acotado (anti-duplicados), no un log histórico.
+- Modelo de extensibilidad "sin tocar código": **DSL declarativa** vs **catálogo fijo parametrizable** vs **plugins**.
 - Política de concurrencia: serialización por instancia o por jugador (suficiente para empezar).
 
 ---
@@ -139,7 +139,7 @@ La prioridad es tener un esqueleto funcionando end‑to‑end y aumentar complej
 - **Golden tests de StatsCalculator:** configs pequeñas con resultados esperados y reproducibles.
 - **Tests de invariantes:** gear no puede estar en dos ubicaciones; slots ocupados coherentes; ownership.
 - **Tests de atomicidad:** cualquier fallo deja el estado idéntico (sin efectos parciales).
-- **Replay tests:** aplicar secuencia de transacciones y comparar con snapshot esperado.
+- **Sequence tests:** aplicar secuencia de transacciones y comparar con estado final esperado.
 - **Migration tests:** cargar snapshot antiguo con config nueva y validar best‑effort.
 
 ---
@@ -156,8 +156,8 @@ La prioridad es tener un esqueleto funcionando end‑to‑end y aumentar complej
 
 - Extensibilidad “sin tocar código”: si no se decide pronto (DSL vs catálogo vs plugins), se rediseña el núcleo.  
   **Mitigación:** decisión en Fase 1.
-- Snapshots sin log: si luego se exige durabilidad fuerte, añadir log puede ser intrusivo.  
-  **Mitigación:** declarar pérdida aceptable o introducir log mínimo desde el inicio.
+- Snapshots sin log: si luego se exige durabilidad fuerte, añadir log puede ser intrusivo.
+  **Decisión tomada:** se acepta pérdida entre snapshots. No se implementa log de transacciones. La arquitectura es servidor autoritativo con estado completo en memoria, persistido periódicamente por snapshots.
 - Multi‑instancia: complica aislamiento y memoria.  
   **Mitigación:** empezar con 1 instancia funcional y habilitar multi‑instancia después (Slice 2–3).
 
@@ -169,6 +169,6 @@ La prioridad es tener un esqueleto funcionando end‑to‑end y aumentar complej
 - Semántica exacta de restricciones de nivel.
 - Conteo de sets con gear multi‑slot.
 - Negativos/clamp/redondeo por stat (defaults).
-- Durabilidad: pérdida aceptable entre snapshots o log mínimo.
+- Durabilidad: **decidido — pérdida aceptable entre snapshots; sin log de transacciones.**
 - Modelo de extensibilidad: DSL vs catálogo vs plugins.
 - Idempotencia (txId) y serialización de transacciones (instancia vs jugador).

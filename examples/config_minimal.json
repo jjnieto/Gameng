@@ -46,7 +46,10 @@
   },
   "sets": {},
   "algorithms": {
-    "growth": { "algorithmId": "flat", "params": {} },
+    "growth": {
+      "algorithmId": "linear",
+      "params": { "perLevelMultiplier": 0.1, "additivePerLevel": { "hp": 1 } }
+    },
     "levelCostCharacter": { "algorithmId": "flat", "params": {} },
     "levelCostGear": { "algorithmId": "flat", "params": {} }
   }

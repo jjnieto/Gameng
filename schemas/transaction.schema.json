@@ -22,7 +22,8 @@
         "LevelUpCharacter",
         "LevelUpGear",
         "EquipGear",
-        "UnequipGear"
+        "UnequipGear",
+        "GrantResources"
       ]
     },
     "gameInstanceId": {
@@ -77,6 +78,14 @@
       "type": "string",
       "minLength": 1,
       "description": "Required for CreateActor."
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "number",
+        "minimum": 0
+      },
+      "description": "Required for GrantResources: map of resourceId to amount to grant."
     }
   },
   "allOf": [
@@ -137,6 +146,13 @@
         "required": ["type"]
       },
       "then": { "required": ["gearId"] }
+    },
+    {
+      "if": {
+        "properties": { "type": { "const": "GrantResources" } },
+        "required": ["type"]
+      },
+      "then": { "required": ["playerId", "resources"] }
     }
   ]
 }

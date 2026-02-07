@@ -25,6 +25,10 @@ This document tracks domain-level decisions and ambiguities. Items marked **TODO
 - Purely additive: if `statClamps` is absent, no clamping occurs.
 - Runtime applies clamp post-calculation only for stats listed in the map.
 - Format: `"statClamps": { "hp": { "min": 0 }, "crit_chance": { "min": 0, "max": 1 } }`
+- **Order of operations:** `finalStats = clamp(applyGrowth(classBase, charLevel) + applyGrowth(gearBase, gearLevel) + setBonusFlat)`. Clamping is the last step, applied after all sums and rounding.
+- Does not mutate state — purely a read-time calculation on the stats endpoint.
+
+**Implementation:** `src/routes/stats.ts` Step 5. `StatClamp` interface in `src/state.ts`. `GameConfig.statClamps` optional field.
 
 **Schema change:** Added optional `statClamps` property at root + `StatClamp` definition in `game_config.schema.json`.
 
@@ -53,13 +57,21 @@ This document tracks domain-level decisions and ambiguities. Items marked **TODO
 
 **Context:** DELIVERABLES §1.1 mentions idempotency via txId, but format and duplicate-handling are unspecified.
 
-**Decision:** txId is a freeform non-empty string. Idempotency is server-side with per-instance cache.
+**Decision:** txId is a freeform non-empty string. Idempotency is server-side with per-instance FIFO cache.
 
 - No UUID format imposed (allows client flexibility).
-- The server detects duplicate txIds per `gameInstanceId` and returns the cached result.
-- Cache TTL is configurable at runtime (suggested 3600s), outside schema scope.
+- The server detects duplicate txIds per `gameInstanceId` and returns the cached result without re-executing mutations or bumping `stateVersion`.
+- **Cache scope:** ALL responses that pass through the tx handler are cached — both successful (200 `accepted: true/false`) and error responses (401 `UNAUTHORIZED`, 500 `CONFIG_NOT_FOUND`, etc.). Only responses that occur *before* the idempotency checkpoint are not cached: 404 `INSTANCE_NOT_FOUND` (instance must exist to have a cache) and 400 `INSTANCE_MISMATCH` (body validation before txId lookup). Once a txId is cached, replaying it returns the exact same statusCode and body, regardless of whether the client now provides valid credentials or corrected data.
+- **Bounded FIFO eviction:** Oldest entry removed when exceeding `maxEntries` (default 1000). Configurable via `AppOptions.maxIdempotencyEntries` or `GAMENG_MAX_IDEMPOTENCY_ENTRIES` env var. This is an anti-duplicate cache, not a transaction log — there is no replay, no history query, and no endpoint to inspect the cache.
+- **Persistence:** Cache stored in `GameState.txIdCache: TxIdCacheEntry[]` — survives snapshots/restores automatically. `IdempotencyStore` class wraps `state.txIdCache` by reference, rebuilding its Map index on construction (including from restored snapshots).
+- **Entry contents (minimal):** Each `TxIdCacheEntry` stores only `txId`, `statusCode`, and `body` (the cached HTTP response). No original request payload is stored.
+- **Same txId, different payload:** Returns first cached result (txId is the sole idempotency key).
+- **Same txId, different gameInstanceId:** Independent — each instance has its own `txIdCache`.
+- **Evicted txId replayed:** Processes as a new transaction (may succeed or fail depending on current state).
 
-**Schema change:** None (already correct: `"type": "string", "minLength": 1`).
+**Implementation:** `src/idempotency-store.ts` (IdempotencyStore class), integrated via `reply.send` wrapper in `src/routes/tx.ts`.
+
+**Schema change:** `game_state.schema.json` — added optional `txIdCache` array property and `TxIdCacheEntry` definition.
 
 ### 6. UnequipGear: required fields
 
@@ -227,6 +239,7 @@ Restriction checks run after `GEAR_ALREADY_EQUIPPED` and before slot pattern res
   - `OWNERSHIP_VIOLATION` — TX: HTTP 200, `accepted: false`. GET: HTTP 403. Valid actor but doesn't own the player.
 - **Protected endpoints:** All `POST /:id/tx` (except CreateActor), `GET /:id/state/player/:pid`, `GET /:id/character/:cid/stats`.
 - **Unprotected endpoints:** `GET /health`, `GET /:id/config`, `GET /:id/stateVersion`.
+- **Single config per process:** The server loads exactly one `GameConfig` at startup (`app.activeConfig`). `GET /:id/config` returns this active config for any valid instance. `state.gameConfigId` is kept in sync by the migrator (stamps current config on every restored snapshot) but is not the source of truth for the `/config` endpoint.
 - **Schema evolution:** `actors` is optional in `game_state.schema.json` (not in `required`). Old snapshots pass validation. Migrator fills `actors: {}` on legacy snapshots.
 - **Transaction schema:** `playerId` removed from base `required`, added via negative conditional ("required unless CreateActor"). `CreateActor` requires `actorId` + `apiKey`.
 
@@ -245,6 +258,76 @@ Restriction checks run after `GEAR_ALREADY_EQUIPPED` and before slot pattern res
 - **Error code:** Reuses `UNAUTHORIZED` (HTTP 401). The `errorMessage` distinguishes "Missing or invalid admin API key." from actor token failures.
 
 **Schema change:** None. This is a runtime-only configuration.
+
+### 18. Growth algorithms — stat scaling by level
+
+**Context:** Stats were flat: `finalStats = classBase + gearBase + setBonuses`. Character level and gear level existed but were ignored (decision #7). The config had `algorithms.growth: { algorithmId, params }` but runtime treated everything as "flat".
+
+**Decision:** A real growth algorithm system replaces the flat default.
+
+- **Same algorithm for class and gear:** Single `config.algorithms.growth` ref controls both character base stat scaling and gear base stat scaling.
+- **Pipeline:** `finalStats = applyGrowth(classBase, charLevel) + applyGrowth(gearBase, gearLevel) + setBonusFlat`
+- **Set bonuses NOT scaled:** Applied flat after growth — bonuses are threshold rewards, not level-dependent.
+- **`Math.floor` on all results:** Integer stat convention. Applied per-component (class and each gear piece independently).
+- **Level 1 identity:** All algorithms return exactly `baseStats` at level 1.
+- **Only transform stats present in baseStats:** `additivePerLevel` keys not in baseStats are ignored by the linear formula, but additive terms still apply to stats in the input map even if their base value is 0.
+- **`level < 1` guard:** Treated as level 1 (defensive, should never happen).
+- **Unknown `algorithmId` → 500:** `INVALID_CONFIG_REFERENCE` error code on the stats endpoint.
+- **Malformed params → 500:** Each algorithm validates its own params at runtime.
+
+**Supported algorithms:**
+
+| Algorithm | Formula | Params |
+|---|---|---|
+| `flat` | `floor(base)` | _(none)_ |
+| `linear` | `floor(base * (1 + perLevelMultiplier * (level-1)) + additivePerLevel[stat] * (level-1))` | `perLevelMultiplier: number`, `additivePerLevel?: Record<string, number>` |
+| `exponential` | `floor(base * exponent^(level-1))` | `exponent: number` |
+
+**Registry:** `src/algorithms/growth.ts` — algorithm functions + `applyGrowth()` public helper.
+
+**Schema change:** None (algorithm params were already open `object`).
+
+### 19. Level-up cost validation — resources
+
+**Context:** `LevelUpCharacter` and `LevelUpGear` incremented levels without any resource cost. `config.algorithms.levelCostCharacter` and `config.algorithms.levelCostGear` existed in config but were ignored at runtime. There was no resource/wallet concept in player state.
+
+**Decision:** Level-ups now require resources. The cost is data-driven via `config.algorithms.levelCostCharacter/Gear`.
+
+- **Player resources:** `Player.resources: Record<string, number>` — a wallet of arbitrary resource IDs (e.g. `xp`, `gold`). Optional in schema (defaults to `{}`). No resource catalogue in config (resource IDs are freeform strings, not validated against a config list).
+- **Cost computation:** For a multi-level level-up from `currentLevel` by `N` levels, the total cost is the **sum of individual level costs** for each target level (`currentLevel+1` through `currentLevel+N`). Each algorithm computes cost for a single target level.
+- **Validation order:** `MAX_LEVEL_REACHED` is checked **before** `INSUFFICIENT_RESOURCES`. No point computing cost for an impossible level-up.
+- **Atomicity:** Resources are deducted and level incremented in the same transaction. If insufficient, no mutation occurs.
+- **Error code:** `INSUFFICIENT_RESOURCES` (HTTP 200, `accepted: false`) when the player's wallet doesn't have enough for the total cost.
+
+**Supported cost algorithms:**
+
+| Algorithm | Output | Params |
+|---|---|---|
+| `flat` / `free` | `{}` (no cost) | _(none)_ |
+| `linear_cost` | `{ [resourceId]: base + perLevel * (targetLevel - 2) }` | `resourceId: string`, `base: number`, `perLevel: number` |
+
+- `flat` returns empty cost (free level-ups) — backward-compatible with existing configs.
+- `linear_cost` charges a single resource whose cost scales linearly with the target level. `targetLevel <= 1` returns `{}` (defensive).
+- Unknown `algorithmId` or malformed params → HTTP 500 `INVALID_CONFIG_REFERENCE`.
+
+**GrantResources transaction:** New admin-gated transaction to add resources to a player's wallet.
+- Requires `ADMIN_API_KEY` via Bearer token (same as `CreateActor`).
+- Additive: `resources` amounts are summed into existing wallet.
+- Error codes: `PLAYER_NOT_FOUND`, `UNAUTHORIZED`.
+
+**Schema changes:**
+- `game_state.schema.json`: Added optional `resources` property to `Player` definition.
+- `transaction.schema.json`: Added `GrantResources` to type enum, added `resources` property with conditional requirement.
+
+### 20. ADMIN_API_KEY is always required for admin operations
+
+**Context:** Previously, `CreateActor` and `GrantResources` only validated the admin Bearer token if `app.adminApiKey` was configured. If not configured, these operations were unauthenticated — any client could create actors or grant resources without credentials.
+
+**Decision:** Admin operations **always** require `ADMIN_API_KEY`. If the server has no admin key configured (`adminApiKey` is undefined), `CreateActor` and `GrantResources` return 401 `UNAUTHORIZED`. There is no fallback to unauthenticated mode.
+
+- **Rationale:** Unauthenticated admin operations are a security risk in any deployment. Failing closed is the correct default.
+- **Impact:** Servers that previously relied on unauthenticated `CreateActor` (no `ADMIN_API_KEY` env var or option) must now set one.
+- **Error code:** Same as before — `UNAUTHORIZED` (HTTP 401).
 
 ## TODO — Open Questions
 

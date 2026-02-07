@@ -24,9 +24,10 @@ Returned as top-level HTTP error responses (non-200). These apply to any endpoin
 | `INSTANCE_NOT_FOUND` | 404 | All `/:gameInstanceId/*` | `gameInstanceId` not found in the instance store. |
 | `INSTANCE_MISMATCH` | 400 | `POST /:gameInstanceId/tx` | `body.gameInstanceId` does not match the path parameter. |
 | `CONFIG_NOT_FOUND` | 500 | `POST /:gameInstanceId/tx`, `GET .../stats` | The `gameConfigId` referenced by the instance is not loaded. Server misconfiguration. |
+| `INVALID_CONFIG_REFERENCE` | 500 | `GET .../stats` | The `algorithms.growth.algorithmId` is unknown or its `params` are malformed. |
 | `PLAYER_NOT_FOUND` | 404 | `GET .../state/player/:playerId` | `playerId` not found in `state.players`. |
 | `CHARACTER_NOT_FOUND` | 404 | `GET .../character/:characterId/stats` | `characterId` not found in any player. |
-| `UNAUTHORIZED` | 401 | All protected endpoints | Missing or invalid Bearer token. For `POST /tx` with `CreateActor`, the ADMIN_API_KEY must be used. For all other tx types, a valid actor token is required. |
+| `UNAUTHORIZED` | 401 | All protected endpoints | Missing or invalid Bearer token. For `POST /tx` with `CreateActor` or `GrantResources`, the ADMIN_API_KEY must be set on the server and used as Bearer token. If ADMIN_API_KEY is not configured, admin operations always fail. For all other tx types, a valid actor token is required. |
 | `OWNERSHIP_VIOLATION` | 403 | `GET .../state/player/:playerId`, `GET .../character/:characterId/stats` | Authenticated actor does not own the target player. |
 
 > **Note:** `PLAYER_NOT_FOUND` and `CHARACTER_NOT_FOUND` also appear as transaction-domain errors (200 + `accepted: false`) when raised inside a transaction. The HTTP status depends on the endpoint context.
@@ -42,7 +43,7 @@ Returned with HTTP 200, `accepted: false`. The `stateVersion` reflects the versi
 | Code | Transactions | Trigger |
 |---|---|---|
 | `ALREADY_EXISTS` | CreateActor, CreatePlayer, CreateCharacter, CreateGear | The target entity (actor, player, character, or gear) already exists. |
-| `PLAYER_NOT_FOUND` | All (except CreatePlayer) | `playerId` not found in `state.players`. |
+| `PLAYER_NOT_FOUND` | All (except CreatePlayer, CreateActor) | `playerId` not found in `state.players`. |
 | `CHARACTER_NOT_FOUND` | LevelUpCharacter, EquipGear | `characterId` not found in `player.characters`. |
 | `GEAR_NOT_FOUND` | LevelUpGear, EquipGear, UnequipGear | `gearId` not found in `player.gear`. |
 | `INVALID_CONFIG_REFERENCE` | CreateCharacter, CreateGear, EquipGear | `classId` or `gearDefId` does not exist in the game config. |
@@ -52,6 +53,7 @@ Returned with HTTP 200, `accepted: false`. The `stateVersion` reflects the versi
 | Code | Transactions | Trigger |
 |---|---|---|
 | `MAX_LEVEL_REACHED` | LevelUpCharacter, LevelUpGear | `currentLevel + levels` would exceed `config.maxLevel`. |
+| `INSUFFICIENT_RESOURCES` | LevelUpCharacter, LevelUpGear | Player's `resources` wallet does not have enough to cover the total cost computed by the level cost algorithm. |
 
 ### Equipment
 

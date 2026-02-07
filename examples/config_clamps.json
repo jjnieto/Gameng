@@ -1,0 +1,45 @@
+{
+  "gameConfigId": "clamps_v1",
+  "maxLevel": 10,
+  "stats": ["strength", "hp"],
+  "slots": ["right_hand", "off_hand", "head", "chest"],
+  "classes": {
+    "warrior": {
+      "baseStats": { "strength": 5, "hp": 20 }
+    }
+  },
+  "gearDefs": {
+    "sword_basic": {
+      "baseStats": { "strength": 3 },
+      "equipPatterns": [["right_hand"]],
+      "setId": "warrior_set"
+    },
+    "warrior_helm": {
+      "baseStats": { "hp": 3 },
+      "equipPatterns": [["head"]],
+      "setId": "warrior_set"
+    },
+    "warrior_chest": {
+      "baseStats": { "hp": 5 },
+      "equipPatterns": [["chest"]],
+      "setId": "warrior_set"
+    }
+  },
+  "sets": {
+    "warrior_set": {
+      "bonuses": [
+        { "pieces": 2, "bonusStats": { "strength": 2 } },
+        { "pieces": 3, "bonusStats": { "hp": 10 } }
+      ]
+    }
+  },
+  "algorithms": {
+    "growth": { "algorithmId": "flat", "params": {} },
+    "levelCostCharacter": { "algorithmId": "flat", "params": {} },
+    "levelCostGear": { "algorithmId": "flat", "params": {} }
+  },
+  "statClamps": {
+    "strength": { "min": 0, "max": 12 },
+    "hp": { "min": 5 }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "gameConfigId": "costs_v1",
+  "maxLevel": 10,
+  "stats": ["strength", "hp"],
+  "slots": ["right_hand", "off_hand"],
+  "classes": {
+    "warrior": {
+      "baseStats": { "strength": 5, "hp": 20 }
+    }
+  },
+  "gearDefs": {
+    "sword_basic": {
+      "baseStats": { "strength": 3 },
+      "equipPatterns": [["right_hand"]]
+    }
+  },
+  "sets": {},
+  "algorithms": {
+    "growth": { "algorithmId": "flat", "params": {} },
+    "levelCostCharacter": {
+      "algorithmId": "linear_cost",
+      "params": { "resourceId": "xp", "base": 100, "perLevel": 50 }
+    },
+    "levelCostGear": {
+      "algorithmId": "linear_cost",
+      "params": { "resourceId": "gold", "base": 50, "perLevel": 25 }
+    }
+  }
+}

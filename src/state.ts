@@ -1,5 +1,7 @@
 // -- State domain types --
 
+import type { TxIdCacheEntry } from "./idempotency-store.js";
+
 export interface Character {
   classId: string;
   level: number;
@@ -15,6 +17,7 @@ export interface GearInstance {
 export interface Player {
   characters: Record<string, Character>;
   gear: Record<string, GearInstance>;
+  resources?: Record<string, number>;
 }
 
 export interface Actor {
@@ -28,6 +31,7 @@ export interface GameState {
   stateVersion: number;
   players: Record<string, Player>;
   actors: Record<string, Actor>;
+  txIdCache: TxIdCacheEntry[];
 }
 
 // -- Config domain types --
@@ -60,6 +64,11 @@ export interface SetDef {
   bonuses: SetBonus[];
 }
 
+export interface StatClamp {
+  min?: number;
+  max?: number;
+}
+
 export interface GameConfig {
   gameConfigId: string;
   maxLevel: number;
@@ -76,6 +85,7 @@ export interface GameConfig {
     };
     levelCostGear: { algorithmId: string; params?: Record<string, unknown> };
   };
+  statClamps?: Record<string, StatClamp>;
 }
 
 // -- Store factory --
@@ -90,6 +100,7 @@ export function createGameInstanceStore(
     stateVersion: 0,
     players: {},
     actors: {},
+    txIdCache: [],
   });
   return store;
 }
@@ -98,7 +109,9 @@ declare module "fastify" {
   interface FastifyInstance {
     gameInstances: Map<string, GameState>;
     gameConfigs: Map<string, GameConfig>;
+    activeConfig: GameConfig;
     flushSnapshots: () => void;
     adminApiKey: string | undefined;
+    txIdCacheMaxEntries: number;
   }
 }
