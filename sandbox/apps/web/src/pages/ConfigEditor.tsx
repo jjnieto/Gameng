@@ -2,12 +2,17 @@ import { useState, useCallback, useRef } from "react";
 import Ajv from "ajv";
 import type { ErrorObject } from "ajv";
 import { createLauncherClient, LauncherClientError } from "../lib/launcherClient.ts";
-import { createEngineClient, EngineClientError } from "../lib/engineClient.ts";
+import { createEngineClient, getEngineBaseUrl, EngineClientError } from "../lib/engineClient.ts";
 import type { Settings } from "../lib/useSettings.ts";
+import type { GameConfig } from "../lib/types.ts";
 
 import configMinimal from "../presets/config_minimal.json";
 import configSets from "../presets/config_sets.json";
 import gameConfigSchema from "../schemas/game_config.schema.json";
+
+import ClassesPanel from "./config-editor/ClassesPanel.tsx";
+import GearDefsPanel from "./config-editor/GearDefsPanel.tsx";
+import AlgorithmsPanel from "./config-editor/AlgorithmsPanel.tsx";
 
 // ---- Ajv singleton ----
 
@@ -18,6 +23,8 @@ const validateGameConfig = ajv.compile(gameConfigSchema);
 
 const EDITOR_KEY = "gameng-sandbox-config-editor";
 const SAVED_KEY = "gameng-sandbox-config-saved";
+const TAB_KEY = "gameng-sandbox-config-tab";
+const SUBTAB_KEY = "gameng-sandbox-config-subtab";
 
 function loadEditorContent(): string {
   return localStorage.getItem(EDITOR_KEY) ?? "";
@@ -30,6 +37,35 @@ function loadLastSaved(): string {
 }
 function saveLastSaved(s: string): void {
   localStorage.setItem(SAVED_KEY, s);
+}
+
+type MainTab = "visual" | "json";
+type VisualSubTab = "classes" | "gearDefs" | "algorithms";
+
+function loadTab(): MainTab {
+  const v = localStorage.getItem(TAB_KEY);
+  return v === "visual" || v === "json" ? v : "json";
+}
+function saveTab(t: MainTab): void {
+  localStorage.setItem(TAB_KEY, t);
+}
+function loadSubTab(): VisualSubTab {
+  const v = localStorage.getItem(SUBTAB_KEY);
+  return v === "classes" || v === "gearDefs" || v === "algorithms" ? v : "classes";
+}
+function saveSubTab(t: VisualSubTab): void {
+  localStorage.setItem(SUBTAB_KEY, t);
+}
+
+// ---- Try parse helper ----
+
+function tryParseConfig(text: string): { config: GameConfig; error: null } | { config: null; error: string } {
+  if (!text.trim()) return { config: null, error: "Editor is empty" };
+  try {
+    return { config: JSON.parse(text) as GameConfig, error: null };
+  } catch (e) {
+    return { config: null, error: (e as Error).message };
+  }
 }
 
 // ---- Validation ----
@@ -107,33 +143,129 @@ function Banner({ type, message, onDismiss }: {
   );
 }
 
+// ---- Tab bar ----
+
+function TabBar<T extends string>({
+  tabs,
+  active,
+  onChange,
+}: {
+  tabs: { key: T; label: string }[];
+  active: T;
+  onChange: (key: T) => void;
+}) {
+  return (
+    <div className="flex border-b border-gray-700">
+      {tabs.map((tab) => (
+        <button
+          key={tab.key}
+          onClick={() => onChange(tab.key)}
+          className={`px-4 py-1.5 text-xs font-semibold border-b-2 transition-colors ${
+            active === tab.key
+              ? "border-blue-500 text-blue-400"
+              : "border-transparent text-gray-500 hover:text-gray-300"
+          }`}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ---- Main component ----
 
 export default function ConfigEditor({ settings }: { settings: Settings }) {
+  // Source of truth: jsonText (persisted in localStorage)
   const [content, setContent] = useState<string>(loadEditorContent);
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [banner, setBanner] = useState<{ type: "success" | "error" | "info"; message: string } | null>(null);
   const [pending, setPending] = useState(false);
   const lastSavedRef = useRef(loadLastSaved());
 
+  // Parsed config object (null if JSON invalid)
+  const [configObj, setConfigObj] = useState<GameConfig | null>(() => {
+    const result = tryParseConfig(loadEditorContent());
+    return result.config;
+  });
+  const [parseError, setParseError] = useState<string | null>(() => {
+    const result = tryParseConfig(loadEditorContent());
+    return result.error;
+  });
+
+  // Tab state
+  const [activeTab, setActiveTab] = useState<MainTab>(loadTab);
+  const [visualSubTab, setVisualSubTab] = useState<VisualSubTab>(loadSubTab);
+
   const launcherClient = createLauncherClient(settings.launcherBaseUrl);
-  const engineClient = createEngineClient(settings.engineBaseUrl, settings.gameInstanceId);
+  const engineClient = createEngineClient(getEngineBaseUrl(settings), settings.gameInstanceId);
 
   const isDirty = content !== lastSavedRef.current && lastSavedRef.current !== "";
   const charCount = content.length;
 
-  // ---- Editor update ----
+  // ---- JSON text edit (from textarea) ----
+  const onJsonChange = useCallback((text: string) => {
+    setContent(text);
+    saveEditorContent(text);
+    setValidation(null);
+    const result = tryParseConfig(text);
+    if (result.config) {
+      setConfigObj(result.config);
+      setParseError(null);
+    } else {
+      setParseError(result.error);
+    }
+  }, []);
+
+  // ---- Visual config edit (from sub-panels) ----
+  const onConfigChange = useCallback((updated: GameConfig) => {
+    setConfigObj(updated);
+    setParseError(null);
+    const text = JSON.stringify(updated, null, 2);
+    setContent(text);
+    saveEditorContent(text);
+    setValidation(null);
+  }, []);
+
+  // ---- Shared updater (used by presets/load/format) ----
   const updateContent = useCallback((text: string) => {
     setContent(text);
     saveEditorContent(text);
-    setValidation(null); // clear stale validation
+    setValidation(null);
+    const result = tryParseConfig(text);
+    if (result.config) {
+      setConfigObj(result.config);
+      setParseError(null);
+    } else {
+      setParseError(result.error);
+    }
+  }, []);
+
+  // ---- Tab switching ----
+  const switchTab = useCallback((tab: MainTab) => {
+    if (tab === "visual" && parseError) {
+      setBanner({ type: "error", message: `Cannot switch to Visual: ${parseError}` });
+      return;
+    }
+    if (tab === "json" && configObj) {
+      // Regenerate JSON from configObj to ensure freshness
+      const text = JSON.stringify(configObj, null, 2);
+      setContent(text);
+      saveEditorContent(text);
+    }
+    setActiveTab(tab);
+    saveTab(tab);
+  }, [parseError, configObj]);
+
+  const switchSubTab = useCallback((sub: VisualSubTab) => {
+    setVisualSubTab(sub);
+    saveSubTab(sub);
   }, []);
 
   // ---- Load preset ----
   const loadPreset = useCallback((preset: unknown, name: string) => {
     const text = JSON.stringify(preset, null, 2);
     updateContent(text);
-    setValidation(null);
     setBanner({ type: "info", message: `Loaded preset: ${name}` });
   }, [updateContent]);
 
@@ -145,7 +277,6 @@ export default function ConfigEditor({ settings }: { settings: Settings }) {
       const config = await engineClient.getConfig();
       const text = JSON.stringify(config, null, 2);
       updateContent(text);
-      setValidation(null);
       setBanner({ type: "info", message: "Loaded config from engine" });
     } catch (err) {
       if (err instanceof EngineClientError) {
@@ -181,7 +312,6 @@ export default function ConfigEditor({ settings }: { settings: Settings }) {
   const doReset = useCallback(() => {
     if (lastSavedRef.current) {
       updateContent(lastSavedRef.current);
-      setValidation(null);
       setBanner({ type: "info", message: "Reset to last saved" });
     }
   }, [updateContent]);
@@ -218,6 +348,21 @@ export default function ConfigEditor({ settings }: { settings: Settings }) {
     }
   };
 
+  // ---- Render visual sub-panel ----
+  const renderVisualPanel = () => {
+    if (!configObj) {
+      return <p className="text-gray-500 text-sm italic p-4">Cannot render: invalid JSON</p>;
+    }
+    switch (visualSubTab) {
+      case "classes":
+        return <ClassesPanel config={configObj} onChange={onConfigChange} />;
+      case "gearDefs":
+        return <GearDefsPanel config={configObj} onChange={onConfigChange} />;
+      case "algorithms":
+        return <AlgorithmsPanel config={configObj} onChange={onConfigChange} />;
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4 p-6 h-full">
       {/* Header + banner */}
@@ -234,15 +379,45 @@ export default function ConfigEditor({ settings }: { settings: Settings }) {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 flex-1 min-h-0">
-        {/* Left: editor textarea (spans 2 cols) */}
+        {/* Left: main content area (spans 2 cols) */}
         <div className="lg:col-span-2 flex flex-col min-h-0">
-          <textarea
-            className="flex-1 w-full rounded bg-gray-950 text-green-400 font-mono text-xs p-3 border border-gray-700 focus:border-blue-500 focus:outline-none resize-none min-h-[400px]"
-            value={content}
-            onChange={(e) => updateContent(e.target.value)}
-            spellCheck={false}
-            placeholder="Paste or load a GameConfig JSON..."
+          {/* Main tab bar */}
+          <TabBar
+            tabs={[
+              { key: "visual" as MainTab, label: "Visual" },
+              { key: "json" as MainTab, label: "JSON" },
+            ]}
+            active={activeTab}
+            onChange={switchTab}
           />
+
+          {activeTab === "json" ? (
+            <textarea
+              className="flex-1 w-full rounded-b bg-gray-950 text-green-400 font-mono text-xs p-3 border border-t-0 border-gray-700 focus:border-blue-500 focus:outline-none resize-none min-h-[400px]"
+              value={content}
+              onChange={(e) => onJsonChange(e.target.value)}
+              spellCheck={false}
+              placeholder="Paste or load a GameConfig JSON..."
+            />
+          ) : (
+            <div className="flex-1 rounded-b border border-t-0 border-gray-700 bg-gray-900 overflow-y-auto min-h-[400px]">
+              {/* Visual sub-tabs */}
+              <div className="sticky top-0 z-10 bg-gray-900 border-b border-gray-700">
+                <TabBar
+                  tabs={[
+                    { key: "classes" as VisualSubTab, label: "Classes" },
+                    { key: "gearDefs" as VisualSubTab, label: "Gear Defs" },
+                    { key: "algorithms" as VisualSubTab, label: "Algorithms" },
+                  ]}
+                  active={visualSubTab}
+                  onChange={switchSubTab}
+                />
+              </div>
+              <div className="p-3">
+                {renderVisualPanel()}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Right: actions + validation */}

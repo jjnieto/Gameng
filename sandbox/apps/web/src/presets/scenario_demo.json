@@ -1,0 +1,61 @@
+{
+  "id": "scn_preset_demo",
+  "name": "Demo: Full Flow",
+  "gameInstanceId": "instance_001",
+  "configSource": "sets",
+  "continueOnFail": false,
+  "steps": [
+    {
+      "txId": "",
+      "type": "CreateActor",
+      "gameInstanceId": "",
+      "actorId": "actor_demo",
+      "apiKey": "${ACTOR_API_KEY}"
+    },
+    {
+      "txId": "",
+      "type": "CreatePlayer",
+      "gameInstanceId": "",
+      "playerId": "player_demo"
+    },
+    {
+      "txId": "",
+      "type": "GrantResources",
+      "gameInstanceId": "",
+      "playerId": "${LAST_PLAYER_ID}",
+      "resources": { "xp": 500, "gold": 200 }
+    },
+    {
+      "txId": "",
+      "type": "CreateCharacter",
+      "gameInstanceId": "",
+      "playerId": "${LAST_PLAYER_ID}",
+      "characterId": "hero_1",
+      "classId": "warrior"
+    },
+    {
+      "txId": "",
+      "type": "CreateGear",
+      "gameInstanceId": "",
+      "playerId": "${LAST_PLAYER_ID}",
+      "gearId": "sword_1",
+      "gearDefId": "sword_basic"
+    },
+    {
+      "txId": "",
+      "type": "EquipGear",
+      "gameInstanceId": "",
+      "playerId": "${LAST_PLAYER_ID}",
+      "characterId": "${LAST_CHARACTER_ID}",
+      "gearId": "${LAST_GEAR_ID}"
+    },
+    {
+      "txId": "",
+      "type": "LevelUpCharacter",
+      "gameInstanceId": "",
+      "playerId": "${LAST_PLAYER_ID}",
+      "characterId": "${LAST_CHARACTER_ID}",
+      "levels": 2
+    }
+  ]
+}

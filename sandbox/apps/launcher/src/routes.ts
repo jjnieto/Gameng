@@ -1,8 +1,58 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { writeFileSync, mkdirSync, renameSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { LauncherConfig } from "./config.js";
 import type { EngineProcessManager } from "./engine.js";
+
+/**
+ * Forward a request to the engine process.
+ * Returns false if the engine is not running (caller sends 503).
+ */
+async function proxyToEngine(
+  engine: EngineProcessManager,
+  engineBaseUrl: string,
+  targetPath: string,
+  request: FastifyRequest,
+  reply: FastifyReply,
+): Promise<void> {
+  if (!engine.running) {
+    void reply.code(503).send({
+      ok: false,
+      error: "ENGINE_NOT_RUNNING",
+    });
+    return;
+  }
+
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+  };
+  const ct = request.headers["content-type"];
+  if (ct) headers["Content-Type"] = ct;
+  const auth = request.headers["authorization"];
+  if (auth) headers["Authorization"] = auth;
+
+  let upstream: Response;
+  try {
+    upstream = await fetch(`${engineBaseUrl}${targetPath}`, {
+      method: request.method,
+      headers,
+      body: request.method === "POST" ? JSON.stringify(request.body) : undefined,
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch {
+    void reply.code(502).send({
+      ok: false,
+      error: "ENGINE_UNREACHABLE",
+    });
+    return;
+  }
+
+  const body = await upstream.text();
+  void reply
+    .code(upstream.status)
+    .header("Content-Type", upstream.headers.get("Content-Type") ?? "application/json")
+    .send(body);
+}
 
 /**
  * Register all launcher routes.
@@ -12,6 +62,79 @@ export function registerRoutes(
   config: LauncherConfig,
   engine: EngineProcessManager,
 ): void {
+  const engineBaseUrl = `http://localhost:${String(config.enginePort)}`;
+
+  // ---- Proxy routes: /engine/* -> engine ----
+
+  app.get("/engine/health", async (request, reply) => {
+    await proxyToEngine(engine, engineBaseUrl, "/health", request, reply);
+  });
+
+  app.get<{ Params: { gameInstanceId: string } }>(
+    "/engine/:gameInstanceId/config",
+    async (request, reply) => {
+      await proxyToEngine(
+        engine,
+        engineBaseUrl,
+        `/${request.params.gameInstanceId}/config`,
+        request,
+        reply,
+      );
+    },
+  );
+
+  app.get<{ Params: { gameInstanceId: string } }>(
+    "/engine/:gameInstanceId/stateVersion",
+    async (request, reply) => {
+      await proxyToEngine(
+        engine,
+        engineBaseUrl,
+        `/${request.params.gameInstanceId}/stateVersion`,
+        request,
+        reply,
+      );
+    },
+  );
+
+  app.post<{ Params: { gameInstanceId: string } }>(
+    "/engine/:gameInstanceId/tx",
+    async (request, reply) => {
+      await proxyToEngine(
+        engine,
+        engineBaseUrl,
+        `/${request.params.gameInstanceId}/tx`,
+        request,
+        reply,
+      );
+    },
+  );
+
+  app.get<{ Params: { gameInstanceId: string; playerId: string } }>(
+    "/engine/:gameInstanceId/state/player/:playerId",
+    async (request, reply) => {
+      await proxyToEngine(
+        engine,
+        engineBaseUrl,
+        `/${request.params.gameInstanceId}/state/player/${request.params.playerId}`,
+        request,
+        reply,
+      );
+    },
+  );
+
+  app.get<{ Params: { gameInstanceId: string; characterId: string } }>(
+    "/engine/:gameInstanceId/character/:characterId/stats",
+    async (request, reply) => {
+      await proxyToEngine(
+        engine,
+        engineBaseUrl,
+        `/${request.params.gameInstanceId}/character/${request.params.characterId}/stats`,
+        request,
+        reply,
+      );
+    },
+  );
+
   // ---- GET /status ----
   app.get("/status", async () => {
     return {

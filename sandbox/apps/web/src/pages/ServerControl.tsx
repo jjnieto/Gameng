@@ -8,6 +8,7 @@ import type {
   LogEntry,
   EngineStatus,
 } from "../lib/launcherClient.ts";
+import { getEngineBaseUrl } from "../lib/engineClient.ts";
 import type { Settings } from "../lib/useSettings.ts";
 
 // ---- Types ----
@@ -125,6 +126,16 @@ function SettingsPanel({ settings, onUpdate }: {
   return (
     <div className="space-y-2">
       <h2 className="text-lg font-semibold text-white">Settings</h2>
+      <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={settings.useProxy}
+          onChange={(e) => onUpdate({ useProxy: e.target.checked })}
+          className="rounded"
+        />
+        Proxy through launcher
+        <span className="text-xs text-gray-500">(recommended)</span>
+      </label>
       <div>
         <label className="block text-xs text-gray-400 mb-1">Launcher URL</label>
         <input
@@ -134,11 +145,12 @@ function SettingsPanel({ settings, onUpdate }: {
         />
       </div>
       <div>
-        <label className="block text-xs text-gray-400 mb-1">Engine URL</label>
+        <label className="block text-xs text-gray-400 mb-1">Engine URL (direct)</label>
         <input
-          className="w-full rounded bg-gray-700 px-2 py-1 text-sm text-white border border-gray-600 focus:border-blue-500 focus:outline-none"
+          className={`w-full rounded bg-gray-700 px-2 py-1 text-sm text-white border border-gray-600 focus:border-blue-500 focus:outline-none ${settings.useProxy ? "opacity-40" : ""}`}
           value={local.engineBaseUrl}
           onChange={(e) => setLocal({ ...local, engineBaseUrl: e.target.value })}
+          disabled={settings.useProxy}
         />
       </div>
       <button
@@ -195,20 +207,21 @@ export default function ServerControl({ settings, onUpdateSettings }: {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.launcherBaseUrl]);
 
-  // ---- Health check (direct to engine) ----
+  // ---- Health check (via proxy or direct) ----
+  const engineUrl = getEngineBaseUrl(settings);
   const checkHealth = useCallback(async () => {
     if (!status?.engine.running) {
       setHealth(null);
       return;
     }
     try {
-      const res = await fetch(`${settings.engineBaseUrl}/health`);
+      const res = await fetch(`${engineUrl}/health`);
       const body = await res.json() as { status: string; uptime: number };
       setHealth({ ok: res.ok, status: body.status, uptime: body.uptime });
     } catch {
       setHealth({ ok: false, status: "unreachable", uptime: null });
     }
-  }, [status?.engine.running, settings.engineBaseUrl]);
+  }, [status?.engine.running, engineUrl]);
 
   // ---- Polling: status every 3s ----
   useEffect(() => {

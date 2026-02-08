@@ -1,5 +1,6 @@
 // Typed client for the Gameng engine API.
 
+import type { Settings } from "./useSettings.ts";
 import type {
   HealthResponse,
   StateVersionResponse,
@@ -48,6 +49,17 @@ export interface EngineClient {
   postTx(tx: TransactionRequest, opts?: { adminApiKey?: string; apiKey?: string }): Promise<TxResponse>;
   getPlayerState(playerId: string, apiKey: string): Promise<PlayerState>;
   getCharacterStats(characterId: string, apiKey: string): Promise<StatsResponse>;
+}
+
+/**
+ * Returns the base URL for engine API calls.
+ * When useProxy is on, routes through the launcher (/engine prefix).
+ * When off, calls the engine directly.
+ */
+export function getEngineBaseUrl(settings: Settings): string {
+  return settings.useProxy
+    ? `${settings.launcherBaseUrl}/engine`
+    : settings.engineBaseUrl;
 }
 
 export function createEngineClient(

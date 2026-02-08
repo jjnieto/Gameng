@@ -72,18 +72,55 @@ export interface StatsResponse {
   finalStats: Record<string, number>;
 }
 
-// ---- Config (subset used by UI) ----
+// ---- Config types ----
+
+export interface GearRestrictions {
+  allowedClasses?: string[];
+  blockedClasses?: string[];
+  requiredCharacterLevel?: number;
+  maxLevelDelta?: number;
+}
+
+export interface GearDef {
+  baseStats: Record<string, number>;
+  equipPatterns: string[][];
+  setId?: string;
+  setPieceCount?: number;
+  restrictions?: GearRestrictions;
+}
+
+export interface ClassDef {
+  baseStats: Record<string, number>;
+}
+
+export interface SetBonus {
+  pieces: number;
+  bonusStats: Record<string, number>;
+}
+
+export interface SetDef {
+  bonuses: SetBonus[];
+}
+
+export interface StatClamp {
+  min?: number;
+  max?: number;
+}
 
 export interface GameConfig {
   gameConfigId: string;
   maxLevel: number;
   stats: string[];
   slots: string[];
-  classes: Record<string, { baseStats: Record<string, number> }>;
-  gearDefs: Record<string, unknown>;
-  sets: Record<string, unknown>;
-  algorithms: Record<string, unknown>;
-  statClamps?: Record<string, unknown>;
+  classes: Record<string, ClassDef>;
+  gearDefs: Record<string, GearDef>;
+  sets: Record<string, SetDef>;
+  algorithms: {
+    growth: { algorithmId: string; params?: Record<string, unknown> };
+    levelCostCharacter: { algorithmId: string; params?: Record<string, unknown> };
+    levelCostGear: { algorithmId: string; params?: Record<string, unknown> };
+  };
+  statClamps?: Record<string, StatClamp>;
 }
 
 // ---- Error body from non-200 responses ----

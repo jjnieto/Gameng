@@ -5,6 +5,7 @@ import ConfigEditor from "./pages/ConfigEditor.tsx";
 import AdminPanel from "./pages/AdminPanel.tsx";
 import PlayerView from "./pages/PlayerView.tsx";
 import GameMaster from "./pages/GameMaster.tsx";
+import ScenarioRunner from "./pages/ScenarioRunner.tsx";
 
 const NAV_ITEMS = [
   { to: "/server", label: "Server" },
@@ -12,6 +13,7 @@ const NAV_ITEMS = [
   { to: "/admin", label: "Admin" },
   { to: "/player", label: "Player" },
   { to: "/gm", label: "GM" },
+  { to: "/scenarios", label: "Scenarios" },
 ] as const;
 
 function App() {
@@ -66,7 +68,8 @@ function App() {
             }
           />
           <Route path="/player" element={<PlayerView settings={settings} />} />
-          <Route path="/gm" element={<GameMaster />} />
+          <Route path="/gm" element={<GameMaster settings={settings} />} />
+          <Route path="/scenarios" element={<ScenarioRunner settings={settings} />} />
         </Routes>
       </main>
     </div>

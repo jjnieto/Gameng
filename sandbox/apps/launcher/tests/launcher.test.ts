@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
 import Fastify, { type FastifyInstance } from "fastify";
 import { EventEmitter } from "node:events";
 import { Readable } from "node:stream";
@@ -365,5 +365,163 @@ describe("Launcher: POST /engine/restart", () => {
     expect(body.ok).toBe(true);
     expect(body.restarted).toBe(true);
     expect(body.engine.running).toBe(true);
+  });
+});
+
+// ---- Proxy tests ----
+
+describe("Launcher: engine proxy", () => {
+  let app: FastifyInstance;
+  let engine: EngineProcessManager;
+
+  beforeAll(async () => {
+    const config = testConfig();
+    const { spawner } = createMockSpawner();
+    engine = new EngineProcessManager(config, new LogBuffer(), spawner);
+    app = buildApp(config, engine);
+    await app.ready();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it("returns 503 ENGINE_NOT_RUNNING when engine is stopped", async () => {
+    // Engine is not started
+    expect(engine.running).toBe(false);
+
+    const res = await app.inject({ method: "GET", url: "/engine/health" });
+    expect(res.statusCode).toBe(503);
+    const body = res.json();
+    expect(body.error).toBe("ENGINE_NOT_RUNNING");
+  });
+
+  it("returns 503 for parameterized proxy routes when engine is stopped", async () => {
+    const routes = [
+      { method: "GET" as const, url: "/engine/inst1/config" },
+      { method: "GET" as const, url: "/engine/inst1/stateVersion" },
+      { method: "POST" as const, url: "/engine/inst1/tx" },
+      { method: "GET" as const, url: "/engine/inst1/state/player/p1" },
+      { method: "GET" as const, url: "/engine/inst1/character/c1/stats" },
+    ];
+
+    for (const route of routes) {
+      const res = await app.inject({
+        method: route.method,
+        url: route.url,
+        ...(route.method === "POST" ? { payload: {} } : {}),
+      });
+      expect(res.statusCode).toBe(503);
+      expect(res.json().error).toBe("ENGINE_NOT_RUNNING");
+    }
+  });
+
+  describe("with mocked fetch", () => {
+    let originalFetch: typeof globalThis.fetch;
+
+    beforeEach(() => {
+      originalFetch = globalThis.fetch;
+      // Start the engine so proxy doesn't short-circuit with 503
+      engine.start();
+    });
+
+    afterEach(() => {
+      globalThis.fetch = originalFetch;
+    });
+
+    it("forwards request to engine and returns upstream status + body", async () => {
+      const mockBody = { status: "ok", uptime: 42 };
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        status: 200,
+        text: () => Promise.resolve(JSON.stringify(mockBody)),
+        headers: new Headers({ "Content-Type": "application/json" }),
+      });
+
+      const res = await app.inject({ method: "GET", url: "/engine/health" });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual(mockBody);
+
+      const fetchCall = vi.mocked(globalThis.fetch).mock.calls[0];
+      expect(fetchCall[0]).toBe("http://localhost:4098/health");
+    });
+
+    it("copies Authorization header to engine", async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        status: 200,
+        text: () => Promise.resolve("{}"),
+        headers: new Headers({ "Content-Type": "application/json" }),
+      });
+
+      await app.inject({
+        method: "GET",
+        url: "/engine/inst1/state/player/p1",
+        headers: { Authorization: "Bearer my-secret-key" },
+      });
+
+      const fetchCall = vi.mocked(globalThis.fetch).mock.calls[0];
+      const init = fetchCall[1] as RequestInit;
+      const headers = init.headers as Record<string, string>;
+      expect(headers["Authorization"]).toBe("Bearer my-secret-key");
+    });
+
+    it("forwards POST body and Content-Type", async () => {
+      const txBody = { txId: "tx1", type: "CreatePlayer", gameInstanceId: "inst1", playerId: "p1" };
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        status: 200,
+        text: () => Promise.resolve(JSON.stringify({ accepted: true })),
+        headers: new Headers({ "Content-Type": "application/json" }),
+      });
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/engine/inst1/tx",
+        payload: txBody,
+      });
+      expect(res.statusCode).toBe(200);
+
+      const fetchCall = vi.mocked(globalThis.fetch).mock.calls[0];
+      expect(fetchCall[0]).toBe("http://localhost:4098/inst1/tx");
+      const init = fetchCall[1] as RequestInit;
+      expect(init.method).toBe("POST");
+      const headers = init.headers as Record<string, string>;
+      expect(headers["Content-Type"]).toBe("application/json");
+      expect(JSON.parse(init.body as string)).toEqual(txBody);
+    });
+
+    it("returns upstream error status codes as-is", async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        status: 401,
+        text: () => Promise.resolve(JSON.stringify({ errorCode: "UNAUTHORIZED" })),
+        headers: new Headers({ "Content-Type": "application/json" }),
+      });
+
+      const res = await app.inject({
+        method: "GET",
+        url: "/engine/inst1/config",
+      });
+      expect(res.statusCode).toBe(401);
+      expect(res.json().errorCode).toBe("UNAUTHORIZED");
+    });
+
+    it("returns 502 when engine fetch throws", async () => {
+      globalThis.fetch = vi.fn().mockRejectedValue(new Error("Connection refused"));
+
+      const res = await app.inject({ method: "GET", url: "/engine/health" });
+      expect(res.statusCode).toBe(502);
+      expect(res.json().error).toBe("ENGINE_UNREACHABLE");
+    });
+
+    it("maps gameInstanceId and path params correctly", async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        status: 200,
+        text: () => Promise.resolve("{}"),
+        headers: new Headers({ "Content-Type": "application/json" }),
+      });
+
+      await app.inject({ method: "GET", url: "/engine/my_game/character/hero_1/stats" });
+
+      const fetchCall = vi.mocked(globalThis.fetch).mock.calls[0];
+      expect(fetchCall[0]).toBe("http://localhost:4098/my_game/character/hero_1/stats");
+    });
   });
 });

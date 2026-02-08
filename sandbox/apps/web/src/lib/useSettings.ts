@@ -5,6 +5,7 @@ export interface Settings {
   engineBaseUrl: string;
   gameInstanceId: string;
   adminApiKey: string;
+  useProxy: boolean;
 }
 
 const STORAGE_KEY = "gameng-sandbox-settings";
@@ -14,6 +15,7 @@ const DEFAULTS: Settings = {
   engineBaseUrl: "http://localhost:4000",
   gameInstanceId: "instance_001",
   adminApiKey: "",
+  useProxy: true,
 };
 
 function load(): Settings {

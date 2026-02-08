@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { createEngineClient, EngineClientError } from "../lib/engineClient.ts";
+import { createEngineClient, getEngineBaseUrl, EngineClientError } from "../lib/engineClient.ts";
 import type { Settings } from "../lib/useSettings.ts";
 import type { TransactionRequest, TxResponse } from "../lib/types.ts";
 
@@ -130,7 +130,8 @@ export default function AdminPanel({ settings, onUpdateSettings }: {
     });
   }, []);
 
-  const client = createEngineClient(settings.engineBaseUrl, settings.gameInstanceId);
+  const engineUrl = getEngineBaseUrl(settings);
+  const client = createEngineClient(engineUrl, settings.gameInstanceId);
   const hasAdminKey = settings.adminApiKey.trim().length > 0;
 
   // ---- Error helper ----
@@ -347,7 +348,7 @@ export default function AdminPanel({ settings, onUpdateSettings }: {
         <div className="rounded-lg bg-gray-800 p-4 space-y-2">
           <h2 className="text-sm font-semibold text-white">Connection</h2>
           <div className="text-xs text-gray-500 space-y-1">
-            <p>Engine: <span className="text-gray-300 font-mono">{settings.engineBaseUrl}</span></p>
+            <p>Engine: <span className="text-gray-300 font-mono">{engineUrl}</span>{settings.useProxy && <span className="text-blue-400 ml-1">(proxy)</span>}</p>
             <p>Instance: <span className="text-gray-300 font-mono">{settings.gameInstanceId}</span></p>
           </div>
           <InputField

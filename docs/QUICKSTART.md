@@ -268,6 +268,8 @@ Si hay snapshots previos, el motor ejecuta **migración best-effort** automátic
 
 El sandbox es un entorno visual para probar el motor. Incluye un **launcher** (Node/Fastify, puerto 4010) que controla el motor como child process, y una **web** (React + Vite + Tailwind, puerto 5173) como SPA.
 
+> **Demo paso a paso**: ver [`sandbox/DEMO_GAME_PLAYBOOK.md`](sandbox/DEMO_GAME_PLAYBOOK.md) para un manual completo desde arranque hasta stats, incluyendo Scenario Runner, flujo manual y troubleshooting.
+
 ### Requisitos previos
 
 1. Compilar el motor (el launcher arranca `node dist/server.js`):
@@ -346,6 +348,7 @@ npm run sandbox
 
 **Server** (`/server`):
 
+- Toggle **Proxy through launcher** (default ON) — la SPA enruta todas las llamadas al motor a traves del launcher (`/engine/*`), evitando CORS y simplificando la config a un solo baseUrl
 - Editar las URLs de launcher y engine (con persistencia en localStorage)
 - Ver el estado del motor (running, pid, port, health)
 - Start / Stop / Restart con botones
@@ -353,11 +356,23 @@ npm run sandbox
 
 **Config** (`/config`):
 
+Dos modos de edicion: **Visual** y **JSON** (tabs en la parte superior del editor). Ambos se sincronizan bidireccionalmente — los cambios en Visual actualizan el JSON y viceversa.
+
+**JSON tab** (modo original):
+
 1. Pulsa **minimal** o **sets** para cargar un preset.
 2. Pulsa **Validate** — verifica contra el JSON Schema real de GameConfig.
 3. Pulsa **Save to launcher** — guarda el JSON en `sandbox/data/configs/active.json`.
 4. Pulsa **Save + Restart engine** — guarda y reinicia el motor con la nueva config.
 5. Con el motor arrancado, pulsa **Load from engine** — carga la config activa del motor.
+
+**Visual tab** — editor visual con tres sub-tabs:
+
+- **Classes**: tarjetas colapsables por clase. Editar baseStats con K/V inputs. Agregar/eliminar clases.
+- **Gear Defs**: tarjetas por gearDef. Editar baseStats, equipPatterns (slot pills), set (setId + pieceCount), restrictions (allow/block list, requiredCharacterLevel, maxLevelDelta).
+- **Algorithms**: cards para growth, levelCostCharacter, levelCostGear. Dropdowns para algorithmId con campos de parametros contextuales (perLevelMultiplier, exponent, resourceId/base/perLevel). Stat Clamps: toggle + tabla de min/max por stat.
+
+> Al cambiar de JSON a Visual, el JSON debe ser valido (parseable). Si hay errores de sintaxis, el tab Visual se bloquea con un mensaje de error. Los scalars top-level (`gameConfigId`, `maxLevel`, `stats`, `slots`) y los sets se editan en el tab JSON.
 
 **Admin** (`/admin`):
 
@@ -367,14 +382,106 @@ npm run sandbox
 4. **Seed Demo**: crea actor + player + grant en un click. Actualiza automaticamente los inputs de `/player`.
 5. **Load Player State**: verifica que los recursos se aplicaron.
 
-**Player** (`/player`) — smoke test:
+**Player** (`/player`) — 3-column player client:
 
-1. En `/config`, carga un preset, valida y pulsa **Save + Restart engine**.
+1. En `/config`, carga un preset (e.g. **sets**), valida y pulsa **Save + Restart engine**.
 2. Ve a `/admin`, introduce la admin key y pulsa **Seed Demo** (crea actor + player + recursos).
-3. Ve a `/player` — los inputs ya estan rellenos por el seed.
-4. Pulsa **CreateCharacter** con un classId existente (e.g. `warrior`).
-5. Pulsa **Get Stats** — muestra stats calculados del personaje.
-6. Pulsa **Load State** — muestra characters, gear y resources.
+3. Ve a `/player` — el playerId y apiKey ya estan rellenos por el seed.
+4. Pulsa **Refresh State** — carga el estado del player y la config del motor.
+5. Pulsa **Reload Config** — carga slots, clases y gear definitions del motor para los dropdowns.
+6. En la columna Characters, selecciona una clase del dropdown (e.g. `warrior`) y pulsa **Create**.
+7. Click en el personaje creado — aparece el grid de slots y sus stats.
+8. En la columna Gear, selecciona un gearDef del dropdown (e.g. `sword_basic`) y pulsa **Create**.
+9. Click en el gear creado, luego pulsa **Equip** — el slot grid se actualiza.
+10. Crea otro gear con el mismo slot (e.g. otro `sword_basic`) e intenta equipar — recibiras `SLOT_OCCUPIED`.
+11. Activa **Swap mode** y vuelve a equipar — el gear anterior se desequipa automaticamente.
+12. Para desequipar gear, seleccionalo y pulsa **Unequip**.
+13. Con la config **costs** (o una que tenga `levelCostCharacter` con algoritmId `linear_cost`), ve a `/admin` y haz **GrantResources** con `{"xp": 500, "gold": 300}`.
+14. En `/player` el panel de **Resources** se actualiza automaticamente (auto-refresh por stateVersion).
+15. Selecciona un personaje y pulsa **Level Up Char** — el level sube, los recursos decrecen, los stats cambian.
+16. Selecciona un gear y pulsa **Level Up Gear** — el gear level sube, los recursos decrecen, los stats cambian si el gear esta equipado.
+17. Si los recursos son insuficientes, la tx falla con `INSUFFICIENT_RESOURCES` y aparece en el **Activity feed**.
+
+Auto-refresh: cuando **Auto-refresh** esta activado (default ON), la UI hace polling de `stateVersion` cada 1s. Si la version cambia (e.g. por un GrantResources desde `/admin`), refresca automaticamente el estado del player, recursos y stats. Si el motor no responde, backoff a 3s y muestra indicador "Disconnected".
+
+**GM** (`/gm`) — Game Master inspector:
+
+1. Ve a `/gm` despues de haber hecho Seed Demo en `/admin`.
+2. Pulsa **Import from Admin seed** o **Import from /player** — importa el playerId y apiKey conocidos.
+3. Click en el player en la lista — se carga su estado automaticamente.
+4. Panel derecho muestra: resources (tabla), contadores (characters/gear), lista de characters.
+5. Click en un character — muestra level, class, slots equipados y stats calculados.
+6. Pulsa **JSON** para ver el estado crudo del player, **Summary** para volver a la vista compacta.
+7. Con **Auto-refresh** ON (default), los cambios desde `/player` o `/admin` se reflejan en 1.5s.
+8. **Tx Builder**: escribe un JSON de transaccion crudo y pulsa **Send Tx**. txId y gameInstanceId se auto-rellenan si estan vacios.
+9. Pulsa **Load Config** para cargar slots del motor (necesario para ver el grid de slots equipados).
+
+Flujo tipico GM:
+- Seed en `/admin` → acciones del jugador en `/player` → GM inspecciona en `/gm` en tiempo real.
+- GM puede ejecutar transacciones via Tx Builder (GrantResources, LevelUp, etc.) y ver el impacto inmediato.
+
+**Scenarios** (`/scenarios`) — Scenario Runner:
+
+Un scenario es una secuencia de transacciones (TX) que se puede guardar, exportar/importar y ejecutar paso a paso o de corrido contra el motor.
+
+Cada scenario tiene:
+- **name**: nombre descriptivo
+- **gameInstanceId**: instancia del motor sobre la que ejecutar
+- **configSource**: config a aplicar antes de ejecutar (none / minimal / sets / inline JSON)
+- **steps**: array de TransactionRequest JSON
+- **continueOnFail**: si se detiene al primer fallo (default) o continúa
+
+Flujo tipico:
+1. Pulsa **+ New** o **Load Demo Scenario** para crear un scenario.
+2. Edita los steps en el textarea JSON. Cada step es un `TransactionRequest`. Los campos `txId` y `gameInstanceId` se auto-rellenan si estan vacios.
+3. Si el scenario tiene config (e.g. `sets`), pulsa **Apply Config + Restart** para cargar la config y reiniciar el motor.
+4. Pulsa **Run All** para ejecutar todos los steps secuencialmente. El panel de resultados muestra por cada step: tipo, status (accepted/rejected), errorCode, duracion, stateVersion y delta.
+5. Pulsa un boton de **step individual** (numerados) para ejecutar un step concreto.
+6. Pulsa **Resume from N** para continuar la ejecucion desde un step concreto hasta el final (util cuando un paso falla y quieres reintentarlo).
+7. Si hay un fallo y `continueOnFail` esta desactivado, la ejecucion se detiene con un mensaje de error.
+8. Pulsa **Stop** durante la ejecucion para cancelar.
+9. **Export JSON** descarga el scenario como `.scenario.json`. **Import** (en la sidebar) carga un archivo `.scenario.json`.
+
+Variables para credenciales:
+- `${ADMIN_API_KEY}` — se resuelve desde Settings (campo Admin API Key en `/server`).
+- `${ACTOR_API_KEY}` — se resuelve desde el campo "Actor key" en la barra del scenario.
+- `${GAME_INSTANCE_ID}` — se resuelve desde el gameInstanceId del scenario.
+- Los valores reales nunca se muestran en logs ni en el panel de resultados (se redactan como `***`).
+
+Variables de runtime (capturadas automaticamente de pasos ejecutados):
+- `${LAST_PLAYER_ID}` — ultimo `playerId` visto en un paso aceptado.
+- `${LAST_CHARACTER_ID}` — ultimo `characterId`.
+- `${LAST_GEAR_ID}` — ultimo `gearId`.
+- `${LAST_ACTOR_ID}` — ultimo `actorId`.
+
+El **Runtime Context** se muestra como tabla debajo de los botones de accion. Se actualiza tras cada paso aceptado. Si un paso posterior usa `${LAST_PLAYER_ID}` y el paso anterior creo un player con `playerId: "player_demo"`, la variable se resuelve automaticamente. Si una variable no tiene valor, el paso se marca como "invalid" y no se envia.
+
+Push to Player / GM:
+- **Push to Player**: escribe los IDs capturados (playerId, characterId, gearId) en la localStorage de `/player`. Si hay Actor key configurada, un boton secundario permite incluirla.
+- **Push to GM**: añade el playerId al registry de GM y lo selecciona.
+- **Open Player** / **Open GM**: pushea los IDs y navega directamente a la pagina.
+
+Flujo completo: run scenario -> push IDs -> open Player -> equip/level-up manual -> open GM para inspeccionar.
+
+Si un step contiene credenciales (campo `apiKey` o variables `${...}`), la UI muestra un warning amarillo.
+
+Ejemplo de scenario (incluido como preset `scenario_demo.json`):
+```json
+{
+  "name": "Demo: Full Flow",
+  "gameInstanceId": "instance_001",
+  "configSource": "sets",
+  "steps": [
+    { "type": "CreateActor", "actorId": "actor_demo", "apiKey": "${ACTOR_API_KEY}" },
+    { "type": "CreatePlayer", "playerId": "player_demo" },
+    { "type": "GrantResources", "playerId": "${LAST_PLAYER_ID}", "resources": {"xp":500,"gold":200} },
+    { "type": "CreateCharacter", "playerId": "${LAST_PLAYER_ID}", "characterId": "hero_1", "classId": "warrior" },
+    { "type": "CreateGear", "playerId": "${LAST_PLAYER_ID}", "gearId": "sword_1", "gearDefId": "sword_basic" },
+    { "type": "EquipGear", "playerId": "${LAST_PLAYER_ID}", "characterId": "${LAST_CHARACTER_ID}", "gearId": "${LAST_GEAR_ID}" },
+    { "type": "LevelUpCharacter", "playerId": "${LAST_PLAYER_ID}", "characterId": "${LAST_CHARACTER_ID}", "levels": 2 }
+  ]
+}
+```
 
 ### Variables de entorno del launcher
 
@@ -397,6 +504,19 @@ npm run sandbox
 | `/engine/stop` | POST | Para el motor (graceful via `/__shutdown`) |
 | `/engine/restart` | POST | Stop + start |
 | `/config` | POST | Guarda config JSON a disco (`?restart=true` para reiniciar) |
+
+**Proxy routes** — reenvian al motor (503 `ENGINE_NOT_RUNNING` si el motor no esta arrancado):
+
+| Endpoint | Metodo | Destino en motor |
+|---|---|---|
+| `/engine/health` | GET | `/health` |
+| `/engine/:id/config` | GET | `/:id/config` |
+| `/engine/:id/stateVersion` | GET | `/:id/stateVersion` |
+| `/engine/:id/tx` | POST | `/:id/tx` |
+| `/engine/:id/state/player/:pid` | GET | `/:id/state/player/:pid` |
+| `/engine/:id/character/:cid/stats` | GET | `/:id/character/:cid/stats` |
+
+El proxy copia las cabeceras `Content-Type` y `Authorization`, timeout de 10s. Si el motor no responde, devuelve 502 `ENGINE_UNREACHABLE`.
 
 ### Scripts del sandbox
 
