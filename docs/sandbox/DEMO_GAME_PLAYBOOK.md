@@ -62,11 +62,11 @@ SANDBOX_ADMIN_API_KEY=mi-clave-admin npm run sandbox
 Este comando:
 1. Sincroniza schemas y presets al front (`sandbox:sync`).
 2. Arranca el launcher (puerto **4010**).
-3. Arranca la web SPA (puerto **5173**).
+3. Arranca la web SPA (puerto **5173** por defecto; si esta ocupado, Vite usa el siguiente disponible — mira el terminal para el puerto real).
 
 ### Verificar que funciona
 
-1. Abre `http://localhost:5173` en el navegador.
+1. Abre la URL que aparece en el terminal (normalmente `http://localhost:5173`).
 2. La sidebar muestra 6 paginas: **Server**, **Config**, **Admin**, **Player**, **GM**, **Scenarios**.
 3. Ve a **Server** (`/server`).
 4. El indicador de estado dice **Stopped** — el motor aun no esta arrancado.
@@ -79,7 +79,7 @@ Este comando:
 
 | Servicio | Puerto | Cambiar con |
 |---|---|---|
-| Web SPA | 5173 | (Vite default, no configurable via env) |
+| Web SPA | 5173 (auto-incrementa si ocupado) | `vite.config.ts` → `server.port` |
 | Launcher | 4010 | `SANDBOX_LAUNCHER_PORT` |
 | Motor (engine) | 4000 | `SANDBOX_ENGINE_PORT` |
 
@@ -105,7 +105,7 @@ Este flujo usa el **Scenario Runner** (`/scenarios`) para ejecutar un flujo comp
 
 El demo usa variables para credenciales. Necesitas configurar dos valores:
 
-1. **Admin API Key**: ve a **Server** (`/server`) > seccion **Settings** > campo **Admin API Key** e introduce la misma clave que usaste al arrancar (e.g. `mi-clave-admin`). Pulsa **Save**.
+1. **Admin API Key**: ve a **Admin** (`/admin`) > seccion **Connection** > campo **Admin API Key** e introduce la misma clave que usaste al arrancar (e.g. `mi-clave-admin`). El valor se guarda automaticamente en los settings globales.
 
 2. Vuelve a **Scenarios** (`/scenarios`). En la barra superior del scenario, introduce la clave del actor en el campo **Actor key:** (e.g. `demo-secret-key` — esta sera la clave que el paso `CreateActor` asigna al actor).
 
@@ -193,8 +193,8 @@ Este flujo recorre cada pagina individualmente, dando control total sobre cada p
 **Opcion rapida — Seed Demo:**
 
 3. En la seccion **Seed Demo**, verifica los valores por defecto:
-   - Actor ID: `actor_001`
-   - Actor API Key: `my-secret-key`
+   - Actor ID: `actor_1`
+   - Actor API Key: `my-player-key`
    - Player ID: `player_1`
 4. Pulsa **Seed Demo**.
 5. Los 3 pasos se ejecutan: CreateActor, CreatePlayer, GrantResources.
@@ -204,8 +204,8 @@ Este flujo recorre cada pagina individualmente, dando control total sobre cada p
 **Opcion manual:**
 
 3. En la seccion **CreateActor**:
-   - Actor ID: `actor_001`
-   - Actor API Key: `my-secret-key`
+   - Actor ID: `actor_1`
+   - Actor API Key: `my-player-key`
    - Pulsa **CreateActor**.
 4. El panel **Result** muestra `accepted: true`.
 5. En la seccion **GrantResources**:
@@ -218,7 +218,7 @@ Este flujo recorre cada pagina individualmente, dando control total sobre cada p
 1. Ve a **Player** (`/player`).
 2. Si hiciste **Seed Demo**, los campos **Player ID** y **API Key** ya estan rellenos. Si no, introduce:
    - Player ID: `player_1`
-   - API Key: `my-secret-key` (la API key del actor que creo el player)
+   - API Key: `my-player-key` (la API key del actor que creo el player)
 
 **Crear player (si no hiciste Seed):**
 
@@ -377,9 +377,8 @@ Flujo de propiedad: Actor → Player → Characters + Gear.
 
 **Solucion**:
 1. Verifica que arrancaste el sandbox con `SANDBOX_ADMIN_API_KEY=...`.
-2. En **Server** > **Settings**, verifica que el campo **Admin API Key** contiene la misma clave.
-3. En **Admin**, verifica que el campo **Admin API Key** coincide.
-4. Si no configuraste la variable de entorno, para el sandbox, configurala, y arranca de nuevo.
+2. En **Admin** (`/admin`) > seccion **Connection**, verifica que el campo **Admin API Key** contiene la misma clave que usaste al arrancar.
+3. Si no configuraste la variable de entorno, para el sandbox, configurala, y arranca de nuevo.
 
 ### Config validation errors
 

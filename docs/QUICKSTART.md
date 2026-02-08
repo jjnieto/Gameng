@@ -266,7 +266,7 @@ Si hay snapshots previos, el motor ejecuta **migración best-effort** automátic
 
 ## Sandbox
 
-El sandbox es un entorno visual para probar el motor. Incluye un **launcher** (Node/Fastify, puerto 4010) que controla el motor como child process, y una **web** (React + Vite + Tailwind, puerto 5173) como SPA.
+El sandbox es un entorno visual para probar el motor. Incluye un **launcher** (Node/Fastify, puerto 4010) que controla el motor como child process, y una **web** (React + Vite + Tailwind, puerto 5173 por defecto) como SPA.
 
 > **Demo paso a paso**: ver [`sandbox/DEMO_GAME_PLAYBOOK.md`](sandbox/DEMO_GAME_PLAYBOOK.md) para un manual completo desde arranque hasta stats, incluyendo Scenario Runner, flujo manual y troubleshooting.
 
@@ -318,7 +318,7 @@ npm run sandbox:launcher   # Solo launcher (puerto 4010)
 npm run sandbox:web        # Solo web (puerto 5173, incluye sync)
 ```
 
-Abre `http://localhost:5173` en el navegador.
+Abre la URL que aparece en el terminal (normalmente `http://localhost:5173`; Vite auto-incrementa el puerto si esta ocupado).
 
 ### Configurar SANDBOX_ADMIN_API_KEY
 
@@ -376,7 +376,7 @@ Dos modos de edicion: **Visual** y **JSON** (tabs en la parte superior del edito
 
 **Admin** (`/admin`):
 
-1. Introduce la Admin API Key (la misma que `SANDBOX_ADMIN_API_KEY`).
+1. En la seccion **Connection**, introduce la Admin API Key (la misma que `SANDBOX_ADMIN_API_KEY`).
 2. **CreateActor**: crea un actor con su API key.
 3. **GrantResources**: asigna recursos a un player existente (JSON `{"gold":100}`).
 4. **Seed Demo**: crea actor + player + grant en un click. Actualiza automaticamente los inputs de `/player`.
@@ -443,7 +443,7 @@ Flujo tipico:
 9. **Export JSON** descarga el scenario como `.scenario.json`. **Import** (en la sidebar) carga un archivo `.scenario.json`.
 
 Variables para credenciales:
-- `${ADMIN_API_KEY}` — se resuelve desde Settings (campo Admin API Key en `/server`).
+- `${ADMIN_API_KEY}` — se resuelve desde Settings globales (campo Admin API Key en `/admin` > Connection).
 - `${ACTOR_API_KEY}` — se resuelve desde el campo "Actor key" en la barra del scenario.
 - `${GAME_INSTANCE_ID}` — se resuelve desde el gameInstanceId del scenario.
 - Los valores reales nunca se muestran en logs ni en el panel de resultados (se redactan como `***`).

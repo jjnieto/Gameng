@@ -333,7 +333,7 @@ export default function AdminPanel({ settings, onUpdateSettings }: {
         {/* Admin key banner */}
         {!hasAdminKey && (
           <div className="rounded bg-yellow-900/50 border border-yellow-700 px-3 py-2 text-sm text-yellow-300">
-            Admin API Key not set. Configure it below or in /server settings.
+            Admin API Key not set. Configure it in the Connection section below.
           </div>
         )}
 
