@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, existsSync, copyFileSync } from "node:fs";
 
 /**
  * Centralized launcher configuration.
@@ -46,6 +46,15 @@ export function resolveConfig(): LauncherConfig {
   mkdirSync(resolve(repoRoot, "sandbox/data/configs"), { recursive: true });
   mkdirSync(snapshotDir, { recursive: true });
   mkdirSync(resolve(repoRoot, "sandbox/data/logs"), { recursive: true });
+
+  // Bootstrap default config if missing (e.g. after sandbox:reset)
+  if (!existsSync(configPath)) {
+    const defaultConfig = resolve(repoRoot, "examples", "config_minimal.json");
+    if (existsSync(defaultConfig)) {
+      copyFileSync(defaultConfig, configPath);
+      console.log(`[launcher] No active config found — copied default from examples/config_minimal.json`);
+    }
+  }
 
   return {
     launcherPort: Number(process.env.SANDBOX_LAUNCHER_PORT ?? 4010),

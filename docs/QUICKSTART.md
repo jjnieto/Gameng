@@ -526,7 +526,8 @@ El proxy copia las cabeceras `Content-Type` y `Authorization`, timeout de 10s. S
 | `npm run sandbox:launcher` | Solo launcher |
 | `npm run sandbox:web` | Sync + solo web |
 | `npm run sandbox:sync` | Copia schemas/presets al front |
-| `npm run sandbox:reset` | Limpia `sandbox/data/` (configs, snapshots, logs) |
+| `npm run sandbox:stop` | Mata procesos en puertos 4000 y 4010 |
+| `npm run sandbox:reset` | Stop + limpia `sandbox/data/` (configs, snapshots, logs) |
 
 ### Estructura
 

@@ -22,8 +22,9 @@
     "sandbox:sync": "node scripts/sandbox-sync-assets.mjs",
     "sandbox:launcher": "npm --prefix sandbox/apps/launcher run dev",
     "sandbox:web": "npm run sandbox:sync && npm --prefix sandbox/apps/web run dev",
-    "sandbox": "npm run sandbox:sync && concurrently -n launcher,web -c blue,green \"npm run sandbox:launcher\" \"npm run sandbox:web\"",
-    "sandbox:reset": "node -e \"const fs=require('fs');const p=require('path');['configs','snapshots','logs'].forEach(d=>{const dir=p.join('sandbox','data',d);if(fs.existsSync(dir)){fs.readdirSync(dir).filter(f=>f!=='.gitkeep').forEach(f=>fs.rmSync(p.join(dir,f),{recursive:true}))}});console.log('sandbox/data cleaned')\""
+    "sandbox": "npm run sandbox:sync && concurrently --kill-others -n launcher,web -c blue,green \"npm run sandbox:launcher\" \"npm run sandbox:web\"",
+    "sandbox:stop": "node scripts/sandbox-kill-ports.mjs",
+    "sandbox:reset": "node scripts/sandbox-kill-ports.mjs && node -e \"const fs=require('fs');const p=require('path');['configs','snapshots','logs'].forEach(d=>{const dir=p.join('sandbox','data',d);if(fs.existsSync(dir)){fs.readdirSync(dir).filter(f=>f!=='.gitkeep').forEach(f=>fs.rmSync(p.join(dir,f),{recursive:true}))}});console.log('sandbox/data cleaned')\""
   },
   "dependencies": {
     "ajv": "^8.17.1",

@@ -427,9 +427,15 @@ Para limpiar todos los datos (configs, snapshots, logs) y empezar de cero:
 npm run sandbox:reset
 ```
 
-Esto borra el contenido de `sandbox/data/` (configs, snapshots, logs).
+Esto mata los procesos en los puertos 4000/4010 (si quedan huerfanos) y borra el contenido de `sandbox/data/`. Al arrancar de nuevo, el launcher copia automaticamente `examples/config_minimal.json` como config por defecto si no existe `active.json`.
 
-> Los datos de localStorage del navegador (scenarios, player inputs, GM registry) no se borran con este comando. Para limpiarlos, usa las DevTools del navegador (Application > Local Storage > Clear).
+Si solo necesitas liberar los puertos sin borrar datos:
+
+```bash
+npm run sandbox:stop
+```
+
+> Los datos de localStorage del navegador (scenarios, player inputs, GM registry) no se borran con estos comandos. Para limpiarlos, usa las DevTools del navegador (Application > Local Storage > Clear).
 
 Despues del reset, vuelve a arrancar con `npm run sandbox`.
 

@@ -189,4 +189,19 @@ export class EngineProcessManager {
     await new Promise((r) => setTimeout(r, 300));
     return this.start();
   }
+
+  /**
+   * Synchronous force-kill of the engine child process.
+   * Used in process.on("exit") which does not allow async work.
+   * On Windows, child.kill() is always a hard kill.
+   */
+  killSync(): void {
+    if (this.proc && this.proc.exitCode === null) {
+      try {
+        this.proc.kill();
+      } catch {
+        // Process may have already exited
+      }
+    }
+  }
 }

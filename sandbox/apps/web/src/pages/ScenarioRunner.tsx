@@ -31,7 +31,8 @@ function formatError(err: unknown): string {
   if (err instanceof EngineClientError) {
     const code = err.body?.errorCode ?? "";
     const msg = err.body?.errorMessage ?? err.message;
-    return code ? `${code}: ${msg}` : msg;
+    const prefix = code ? `${code}: ` : "";
+    return `${prefix}${msg} (HTTP ${String(err.status)})`;
   }
   if (err instanceof LauncherClientError) {
     const body = err.body as { error?: string } | null;
@@ -395,8 +396,17 @@ export default function ScenarioRunner({ settings }: { settings: Settings }) {
       }
       await launcherClient.saveConfig(config, { restart: true });
       setBanner({ type: "success", message: "Config applied + engine restarting..." });
-      // Wait a bit for engine to be ready
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      // Poll engine health until ready (up to 10s)
+      const deadline = Date.now() + 10_000;
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        try {
+          await engineClient.health();
+          break; // engine is up
+        } catch {
+          // not ready yet, keep polling
+        }
+      }
     } catch (e) {
       setBanner({ type: "error", message: `Apply config failed: ${formatError(e)}` });
     }
@@ -441,9 +451,16 @@ export default function ScenarioRunner({ settings }: { settings: Settings }) {
       const authOpts = isAdmin
         ? { adminApiKey: vars.ADMIN_API_KEY }
         : { apiKey: resolved.apiKey ?? vars.ACTOR_API_KEY };
-      // Remove apiKey from tx body since we pass it as auth header
-      const { apiKey: _removed, ...txBody } = resolved;
-      const response = await engineClient.postTx(txBody as TransactionRequest, authOpts);
+      // For non-admin types, remove apiKey from body (it goes in the auth header).
+      // For CreateActor, keep apiKey in body — it's the key assigned to the new actor.
+      let txBody: TransactionRequest;
+      if (isAdmin) {
+        txBody = resolved;
+      } else {
+        const { apiKey: _removed, ...rest } = resolved;
+        txBody = rest as TransactionRequest;
+      }
+      const response = await engineClient.postTx(txBody, authOpts);
       const durationMs = Math.round(performance.now() - start);
       const versionAfter = response.stateVersion ?? null;
       // Extract IDs from the ORIGINAL step (pre-resolve) to capture literal IDs,

@@ -32,6 +32,13 @@ const shutdown = async () => {
 process.on("SIGTERM", () => void shutdown());
 process.on("SIGINT", () => void shutdown());
 
+// Last-resort: synchronously kill the engine when this process exits.
+// On Windows, SIGINT/SIGTERM may not fire (concurrently kills with taskkill),
+// but the "exit" event always fires. This prevents orphaned engine processes.
+process.on("exit", () => {
+  engine.killSync();
+});
+
 app.listen(
   { port: config.launcherPort, host: "127.0.0.1" },
   (err) => {
