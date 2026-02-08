@@ -408,6 +408,12 @@ export default function PlayerView({ settings }: { settings: Settings }) {
     }
   }, []);
 
+  // Auto-load config on mount (and when engine URL changes)
+  useEffect(() => {
+    void loadConfig();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engineUrl, settings.gameInstanceId]);
+
   // Auto-fetch stats when character selection changes
   useEffect(() => {
     if (inputs.selectedCharacterId && playerState) {
@@ -702,10 +708,10 @@ export default function PlayerView({ settings }: { settings: Settings }) {
             </div>
           </div>
 
-          {/* Resources */}
+          {/* Player Resources */}
           <div className="rounded-lg bg-gray-800 p-3">
             <h3 className="text-sm font-semibold text-gray-300 mb-2">
-              Resources
+              Player Resources
             </h3>
             {playerState && Object.keys(resources).length > 0 ? (
               <table className="w-full text-xs">
@@ -722,10 +728,38 @@ export default function PlayerView({ settings }: { settings: Settings }) {
               </table>
             ) : (
               <p className="text-xs text-gray-600 italic">
-                {playerState ? "No resources" : "Refresh state to load"}
+                {playerState ? "No player resources" : "Refresh state to load"}
               </p>
             )}
           </div>
+
+          {/* Character Resources (shown when character selected) */}
+          {selectedChar && (
+            <div className="rounded-lg bg-gray-800 p-3">
+              <h3 className="text-sm font-semibold text-gray-300 mb-2">
+                Character Resources
+                <span className="text-xs text-gray-500 font-normal ml-1">
+                  ({inputs.selectedCharacterId})
+                </span>
+              </h3>
+              {Object.keys(selectedChar.resources ?? {}).length > 0 ? (
+                <table className="w-full text-xs">
+                  <tbody>
+                    {Object.entries(selectedChar.resources ?? {}).map(([k, v]) => (
+                      <tr key={k} className="border-b border-gray-700/50">
+                        <td className="py-0.5 text-gray-400">{k}</td>
+                        <td className="py-0.5 text-right text-cyan-300 font-mono font-semibold">
+                          {v}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p className="text-xs text-gray-600 italic">No character resources</p>
+              )}
+            </div>
+          )}
 
           {/* Activity feed */}
           <ActivityFeed entries={activity} />
@@ -1020,6 +1054,19 @@ export default function PlayerView({ settings }: { settings: Settings }) {
                       {selectedGearInst.equippedBy}
                     </span>
                   </p>
+                )}
+                {selectedGearDef && Object.keys(selectedGearDef.baseStats).length > 0 && (
+                  <div className="border-t border-gray-700 pt-1 mt-1">
+                    <p className="text-gray-400 font-semibold mb-0.5">Base Stats:</p>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
+                      {Object.entries(selectedGearDef.baseStats).map(([stat, val]) => (
+                        <div key={stat} className="flex justify-between">
+                          <span className="text-gray-400">{stat}</span>
+                          <span className="text-cyan-300 font-mono">+{val}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 )}
               </div>
             ) : (

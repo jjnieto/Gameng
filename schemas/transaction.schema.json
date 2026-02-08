@@ -23,7 +23,8 @@
         "LevelUpGear",
         "EquipGear",
         "UnequipGear",
-        "GrantResources"
+        "GrantResources",
+        "GrantCharacterResources"
       ]
     },
     "gameInstanceId": {
@@ -153,6 +154,13 @@
         "required": ["type"]
       },
       "then": { "required": ["playerId", "resources"] }
+    },
+    {
+      "if": {
+        "properties": { "type": { "const": "GrantCharacterResources" } },
+        "required": ["type"]
+      },
+      "then": { "required": ["playerId", "characterId", "resources"] }
     }
   ]
 }

@@ -1,5 +1,5 @@
 {
-  "gameConfigId": "costs_v1",
+  "gameConfigId": "scoped_costs_v1",
   "maxLevel": 10,
   "stats": ["strength", "hp"],
   "slots": ["right_hand", "off_hand"],
@@ -18,8 +18,13 @@
   "algorithms": {
     "growth": { "algorithmId": "flat", "params": {} },
     "levelCostCharacter": {
-      "algorithmId": "linear_cost",
-      "params": { "resourceId": "character.xp", "base": 100, "perLevel": 50 }
+      "algorithmId": "mixed_linear_cost",
+      "params": {
+        "costs": [
+          { "scope": "character", "resourceId": "xp", "base": 100, "perLevel": 50 },
+          { "scope": "player", "resourceId": "gold", "base": 10, "perLevel": 5 }
+        ]
+      }
     },
     "levelCostGear": {
       "algorithmId": "linear_cost",

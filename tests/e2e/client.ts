@@ -32,12 +32,13 @@ export interface CharacterStats {
 export interface PlayerState {
   characters: Record<
     string,
-    { classId: string; level: number; equipped: Record<string, string> }
+    { classId: string; level: number; equipped: Record<string, string>; resources?: Record<string, number> }
   >;
   gear: Record<
     string,
     { gearDefId: string; level: number; equippedBy?: string | null }
   >;
+  resources?: Record<string, number>;
 }
 
 export interface HttpResult<T = unknown> {

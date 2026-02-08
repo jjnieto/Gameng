@@ -1,0 +1,8 @@
+{
+  "txId": "gcr_001",
+  "type": "GrantCharacterResources",
+  "gameInstanceId": "instance_001",
+  "playerId": "player_1",
+  "characterId": "char_1",
+  "resources": { "xp": 500 }
+}

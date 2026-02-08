@@ -6,6 +6,7 @@ export interface Character {
   classId: string;
   level: number;
   equipped: Record<string, string>;
+  resources?: Record<string, number>;
 }
 
 export interface GearInstance {

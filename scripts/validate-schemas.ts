@@ -47,6 +47,14 @@ const mappings: Array<{ schema: string; example: string }> = [
     schema: "schemas/transaction.schema.json",
     example: "examples/tx_grant_resources.json",
   },
+  {
+    schema: "schemas/transaction.schema.json",
+    example: "examples/tx_grant_character_resources.json",
+  },
+  {
+    schema: "schemas/game_config.schema.json",
+    example: "examples/config_scoped_costs.json",
+  },
 ];
 
 const ajv = new Ajv({ allErrors: true });

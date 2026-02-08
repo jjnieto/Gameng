@@ -5,6 +5,7 @@ import {
   computeTotalCost,
   hasResources,
   deductResources,
+  parseScopedCost,
 } from "../algorithms/level-cost.js";
 import { IdempotencyStore } from "../idempotency-store.js";
 
@@ -81,7 +82,8 @@ const txRoutes: FastifyPluginCallback = (app: FastifyInstance, _opts, done) => {
 
       switch (body.type) {
         case "CreateActor":
-        case "GrantResources": {
+        case "GrantResources":
+        case "GrantCharacterResources": {
           // Both ALWAYS require ADMIN_API_KEY via Bearer token.
           // If adminApiKey is not configured, all admin operations fail.
           const adminKey = app.adminApiKey;
@@ -135,9 +137,37 @@ const txRoutes: FastifyPluginCallback = (app: FastifyInstance, _opts, done) => {
             });
           }
 
-          // GrantResources
-          const grantPlayer = state.players[body.playerId!];
-          if (!grantPlayer) {
+          if (body.type === "GrantResources") {
+            // GrantResources
+            const grantPlayer = state.players[body.playerId!];
+            if (!grantPlayer) {
+              return reply.send({
+                txId: body.txId,
+                accepted: false,
+                stateVersion: state.stateVersion,
+                errorCode: "PLAYER_NOT_FOUND",
+                errorMessage: `Player '${body.playerId!}' not found.`,
+              });
+            }
+
+            const grantResources = body.resources ?? {};
+            if (!grantPlayer.resources) grantPlayer.resources = {};
+            for (const [resourceId, amount] of Object.entries(grantResources)) {
+              grantPlayer.resources[resourceId] =
+                (grantPlayer.resources[resourceId] ?? 0) + amount;
+            }
+            state.stateVersion++;
+
+            return reply.send({
+              txId: body.txId,
+              accepted: true,
+              stateVersion: state.stateVersion,
+            });
+          }
+
+          // GrantCharacterResources
+          const gcrPlayer = state.players[body.playerId!];
+          if (!gcrPlayer) {
             return reply.send({
               txId: body.txId,
               accepted: false,
@@ -147,11 +177,23 @@ const txRoutes: FastifyPluginCallback = (app: FastifyInstance, _opts, done) => {
             });
           }
 
-          const grantResources = body.resources ?? {};
-          if (!grantPlayer.resources) grantPlayer.resources = {};
-          for (const [resourceId, amount] of Object.entries(grantResources)) {
-            grantPlayer.resources[resourceId] =
-              (grantPlayer.resources[resourceId] ?? 0) + amount;
+          const gcrCharId = body.characterId!;
+          const gcrChar = gcrPlayer.characters[gcrCharId];
+          if (!gcrChar) {
+            return reply.send({
+              txId: body.txId,
+              accepted: false,
+              stateVersion: state.stateVersion,
+              errorCode: "CHARACTER_NOT_FOUND",
+              errorMessage: `Character '${gcrCharId}' not found.`,
+            });
+          }
+
+          const gcrResources = body.resources ?? {};
+          if (!gcrChar.resources) gcrChar.resources = {};
+          for (const [resourceId, amount] of Object.entries(gcrResources)) {
+            gcrChar.resources[resourceId] =
+              (gcrChar.resources[resourceId] ?? 0) + amount;
           }
           state.stateVersion++;
 
@@ -259,6 +301,7 @@ const txRoutes: FastifyPluginCallback = (app: FastifyInstance, _opts, done) => {
             classId,
             level: 1,
             equipped: {},
+            resources: {},
           };
           state.stateVersion++;
 
@@ -314,9 +357,9 @@ const txRoutes: FastifyPluginCallback = (app: FastifyInstance, _opts, done) => {
           }
 
           // Cost validation
-          let charCost: Record<string, number>;
+          let charCostRaw: Record<string, number>;
           try {
-            charCost = computeTotalCost(
+            charCostRaw = computeTotalCost(
               character.level,
               levels,
               lvlConfig.algorithms.levelCostCharacter,
@@ -331,20 +374,59 @@ const txRoutes: FastifyPluginCallback = (app: FastifyInstance, _opts, done) => {
             });
           }
 
-          const charWallet = player.resources ?? {};
-          if (!hasResources(charWallet, charCost)) {
+          // Parse scoped costs
+          let charScoped: ReturnType<typeof parseScopedCost>;
+          try {
+            charScoped = parseScopedCost(charCostRaw);
+          } catch (err) {
+            return reply.send({
+              txId: body.txId,
+              accepted: false,
+              stateVersion: state.stateVersion,
+              errorCode: "INVALID_COST_RESOURCE_KEY",
+              errorMessage:
+                err instanceof Error
+                  ? err.message
+                  : "Cost resource key missing scope prefix.",
+            });
+          }
+
+          const playerWalletForChar = player.resources ?? {};
+          const charWallet = character.resources ?? {};
+
+          if (!hasResources(playerWalletForChar, charScoped.player)) {
+            const needed = [
+              ...Object.entries(charScoped.player).filter(([, v]) => v > 0).map(([k, v]) => `player.${k}: ${String(v)}`),
+              ...Object.entries(charScoped.character).filter(([, v]) => v > 0).map(([k, v]) => `character.${k}: ${String(v)}`),
+            ].join(", ");
             return reply.send({
               txId: body.txId,
               accepted: false,
               stateVersion: state.stateVersion,
               errorCode: "INSUFFICIENT_RESOURCES",
-              errorMessage: `Not enough resources to level up character from ${character.level} to ${newLevel}.`,
+              errorMessage: `Not enough resources to level up character from ${character.level} to ${newLevel}. Required: {${needed}}.`,
+            });
+          }
+
+          if (!hasResources(charWallet, charScoped.character)) {
+            const needed = [
+              ...Object.entries(charScoped.player).filter(([, v]) => v > 0).map(([k, v]) => `player.${k}: ${String(v)}`),
+              ...Object.entries(charScoped.character).filter(([, v]) => v > 0).map(([k, v]) => `character.${k}: ${String(v)}`),
+            ].join(", ");
+            return reply.send({
+              txId: body.txId,
+              accepted: false,
+              stateVersion: state.stateVersion,
+              errorCode: "INSUFFICIENT_RESOURCES",
+              errorMessage: `Not enough resources to level up character from ${character.level} to ${newLevel}. Required: {${needed}}.`,
             });
           }
 
           // Atomic: deduct resources + level up
           if (!player.resources) player.resources = {};
-          deductResources(player.resources, charCost);
+          if (!character.resources) character.resources = {};
+          deductResources(player.resources, charScoped.player);
+          deductResources(character.resources, charScoped.character);
           character.level = newLevel;
           state.stateVersion++;
 
@@ -451,9 +533,9 @@ const txRoutes: FastifyPluginCallback = (app: FastifyInstance, _opts, done) => {
           }
 
           // Cost validation
-          let gearCost: Record<string, number>;
+          let gearCostRaw: Record<string, number>;
           try {
-            gearCost = computeTotalCost(
+            gearCostRaw = computeTotalCost(
               gearInst.level,
               gearLevels,
               gearLvlConfig.algorithms.levelCostGear,
@@ -468,20 +550,87 @@ const txRoutes: FastifyPluginCallback = (app: FastifyInstance, _opts, done) => {
             });
           }
 
-          const gearWallet = player.resources ?? {};
-          if (!hasResources(gearWallet, gearCost)) {
+          // Parse scoped costs
+          let gearScoped: ReturnType<typeof parseScopedCost>;
+          try {
+            gearScoped = parseScopedCost(gearCostRaw);
+          } catch (err) {
+            return reply.send({
+              txId: body.txId,
+              accepted: false,
+              stateVersion: state.stateVersion,
+              errorCode: "INVALID_COST_RESOURCE_KEY",
+              errorMessage:
+                err instanceof Error
+                  ? err.message
+                  : "Cost resource key missing scope prefix.",
+            });
+          }
+
+          // If character costs exist, characterId must be provided
+          const hasCharCosts = Object.keys(gearScoped.character).length > 0;
+          let gearLvlChar: { resources?: Record<string, number> } | undefined;
+          if (hasCharCosts) {
+            if (!body.characterId) {
+              return reply.send({
+                txId: body.txId,
+                accepted: false,
+                stateVersion: state.stateVersion,
+                errorCode: "CHARACTER_REQUIRED",
+                errorMessage: `LevelUpGear cost includes character-scoped resources but no characterId was provided.`,
+              });
+            }
+            gearLvlChar = player.characters[body.characterId];
+            if (!gearLvlChar) {
+              return reply.send({
+                txId: body.txId,
+                accepted: false,
+                stateVersion: state.stateVersion,
+                errorCode: "CHARACTER_NOT_FOUND",
+                errorMessage: `Character '${body.characterId}' not found.`,
+              });
+            }
+          }
+
+          const playerWalletForGear = player.resources ?? {};
+          if (!hasResources(playerWalletForGear, gearScoped.player)) {
+            const needed = [
+              ...Object.entries(gearScoped.player).filter(([, v]) => v > 0).map(([k, v]) => `player.${k}: ${String(v)}`),
+              ...Object.entries(gearScoped.character).filter(([, v]) => v > 0).map(([k, v]) => `character.${k}: ${String(v)}`),
+            ].join(", ");
             return reply.send({
               txId: body.txId,
               accepted: false,
               stateVersion: state.stateVersion,
               errorCode: "INSUFFICIENT_RESOURCES",
-              errorMessage: `Not enough resources to level up gear from ${gearInst.level} to ${newGearLevel}.`,
+              errorMessage: `Not enough resources to level up gear from ${gearInst.level} to ${newGearLevel}. Required: {${needed}}.`,
             });
+          }
+
+          if (hasCharCosts && gearLvlChar) {
+            const gearCharWallet = gearLvlChar.resources ?? {};
+            if (!hasResources(gearCharWallet, gearScoped.character)) {
+              const needed = [
+                ...Object.entries(gearScoped.player).filter(([, v]) => v > 0).map(([k, v]) => `player.${k}: ${String(v)}`),
+                ...Object.entries(gearScoped.character).filter(([, v]) => v > 0).map(([k, v]) => `character.${k}: ${String(v)}`),
+              ].join(", ");
+              return reply.send({
+                txId: body.txId,
+                accepted: false,
+                stateVersion: state.stateVersion,
+                errorCode: "INSUFFICIENT_RESOURCES",
+                errorMessage: `Not enough resources to level up gear from ${gearInst.level} to ${newGearLevel}. Required: {${needed}}.`,
+              });
+            }
           }
 
           // Atomic: deduct resources + level up
           if (!player.resources) player.resources = {};
-          deductResources(player.resources, gearCost);
+          deductResources(player.resources, gearScoped.player);
+          if (hasCharCosts && gearLvlChar) {
+            if (!gearLvlChar.resources) gearLvlChar.resources = {};
+            deductResources(gearLvlChar.resources, gearScoped.character);
+          }
           gearInst.level = newGearLevel;
           state.stateVersion++;
 

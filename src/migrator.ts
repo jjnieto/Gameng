@@ -35,6 +35,17 @@ export function migrateStateToConfig(
     migratedState.txIdCache = [];
   }
 
+  // Normalize character resources for legacy snapshots
+  for (const player of Object.values(migratedState.players)) {
+    for (const character of Object.values(player.characters)) {
+      if (
+        !(character as unknown as { resources?: unknown }).resources
+      ) {
+        character.resources = {};
+      }
+    }
+  }
+
   const report: MigrationReport = {
     gameInstanceId: state.gameInstanceId,
     originalConfigId: state.gameConfigId,

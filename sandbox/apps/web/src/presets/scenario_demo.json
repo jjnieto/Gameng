@@ -20,18 +20,26 @@
     },
     {
       "txId": "",
-      "type": "GrantResources",
-      "gameInstanceId": "",
-      "playerId": "${LAST_PLAYER_ID}",
-      "resources": { "xp": 500, "gold": 200 }
-    },
-    {
-      "txId": "",
       "type": "CreateCharacter",
       "gameInstanceId": "",
       "playerId": "${LAST_PLAYER_ID}",
       "characterId": "hero_1",
       "classId": "warrior"
+    },
+    {
+      "txId": "",
+      "type": "GrantResources",
+      "gameInstanceId": "",
+      "playerId": "${LAST_PLAYER_ID}",
+      "resources": { "gold": 200 }
+    },
+    {
+      "txId": "",
+      "type": "GrantCharacterResources",
+      "gameInstanceId": "",
+      "playerId": "${LAST_PLAYER_ID}",
+      "characterId": "${LAST_CHARACTER_ID}",
+      "resources": { "xp": 500 }
     },
     {
       "txId": "",

@@ -4,6 +4,33 @@ export type LevelCostFn = (
   params: Record<string, unknown>,
 ) => ResourceMap;
 
+export interface ScopedCost {
+  player: ResourceMap;
+  character: ResourceMap;
+}
+
+/**
+ * Parse a flat cost map with prefixed keys into scoped player/character wallets.
+ * Keys must be prefixed with "player." or "character.".
+ * Empty cost maps (from flat algorithm) are fine and return empty scopes.
+ * Throws on unprefixed keys.
+ */
+export function parseScopedCost(cost: ResourceMap): ScopedCost {
+  const result: ScopedCost = { player: {}, character: {} };
+  for (const [key, amount] of Object.entries(cost)) {
+    if (key.startsWith("player.")) {
+      result.player[key.slice(7)] = amount;
+    } else if (key.startsWith("character.")) {
+      result.character[key.slice(10)] = amount;
+    } else {
+      throw new Error(
+        `Invalid cost resource key '${key}': must be prefixed with 'player.' or 'character.'.`,
+      );
+    }
+  }
+  return result;
+}
+
 // -- Algorithm implementations --
 
 /** Always returns empty cost (free level-ups). */
@@ -34,12 +61,55 @@ const linearCost: LevelCostFn = (targetLevel, params) => {
   return { [resourceId]: cost };
 };
 
+/**
+ * Mixed linear cost: produces multiple prefixed cost keys from an array of cost components.
+ * params.costs: Array<{ scope: "player"|"character", resourceId: string, base: number, perLevel: number }>
+ */
+const mixedLinearCost: LevelCostFn = (targetLevel, params) => {
+  const costs = params.costs;
+  if (!Array.isArray(costs)) {
+    throw new Error(
+      "mixed_linear_cost: 'costs' must be an array in params.",
+    );
+  }
+  if (targetLevel <= 1) return {};
+  const result: ResourceMap = {};
+  for (const entry of costs) {
+    const e = entry as Record<string, unknown>;
+    const scope = e.scope;
+    if (scope !== "player" && scope !== "character") {
+      throw new Error(
+        "mixed_linear_cost: each cost entry must have scope 'player' or 'character'.",
+      );
+    }
+    const resourceId = e.resourceId;
+    if (typeof resourceId !== "string") {
+      throw new Error(
+        "mixed_linear_cost: each cost entry must have a string resourceId.",
+      );
+    }
+    const base = e.base;
+    if (typeof base !== "number") {
+      throw new Error("mixed_linear_cost: each cost entry must have a number base.");
+    }
+    const perLevel = e.perLevel;
+    if (typeof perLevel !== "number") {
+      throw new Error("mixed_linear_cost: each cost entry must have a number perLevel.");
+    }
+    const cost = base + perLevel * (targetLevel - 2);
+    const key = `${scope}.${resourceId}`;
+    result[key] = (result[key] ?? 0) + cost;
+  }
+  return result;
+};
+
 // -- Registry --
 
 const registry: Record<string, LevelCostFn> = {
   flat,
   free: flat,
   linear_cost: linearCost,
+  mixed_linear_cost: mixedLinearCost,
 };
 
 // -- Public helpers --

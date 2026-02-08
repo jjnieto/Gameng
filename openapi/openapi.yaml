@@ -148,7 +148,7 @@ paths:
         result regardless of whether the transaction was accepted or rejected.
         Domain errors are reported via `accepted: false` and `errorCode` in the
         response body. Returns 400 only for malformed or unparseable request bodies.
-        CreateActor and GrantResources require the ADMIN_API_KEY via Bearer token;
+        CreateActor, GrantResources, and GrantCharacterResources require the ADMIN_API_KEY via Bearer token;
         all other transaction types require a valid actor Bearer token.
         Idempotent by txId: if the same txId is submitted again, the cached
         response is returned without re-executing the transaction.
@@ -637,6 +637,11 @@ components:
             type: string
             minLength: 1
           description: Map of slotId to gearId. Empty slots are absent.
+        resources:
+          type: object
+          additionalProperties:
+            type: number
+          description: Map of resourceId to amount. Per-character resources (e.g. xp). Optional.
 
     GearInstance:
       type: object
@@ -706,6 +711,7 @@ components:
             - EquipGear
             - UnequipGear
             - GrantResources
+            - GrantCharacterResources
         gameInstanceId:
           type: string
           minLength: 1
@@ -842,6 +848,17 @@ components:
           then:
             required:
               - playerId
+              - resources
+        - if:
+            properties:
+              type:
+                const: GrantCharacterResources
+            required:
+              - type
+          then:
+            required:
+              - playerId
+              - characterId
               - resources
 
     TransactionResult:

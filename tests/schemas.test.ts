@@ -64,6 +64,12 @@ describe("JSON Schema validation — examples match schemas", () => {
     expectValid(validate, data);
   });
 
+  it("tx_grant_character_resources.json validates against transaction.schema.json", () => {
+    const validate = compileSchema("schemas/transaction.schema.json");
+    const data = loadJson("examples/tx_grant_character_resources.json");
+    expectValid(validate, data);
+  });
+
   it("rejects gearDef with both allowedClasses and blockedClasses", () => {
     const validate = compileSchema("schemas/game_config.schema.json");
     const config = {

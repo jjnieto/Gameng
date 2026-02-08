@@ -12,6 +12,9 @@ interface AdminInputs {
   actorApiKey: string;
   grantPlayerId: string;
   grantResources: string;
+  gcrPlayerId: string;
+  gcrCharacterId: string;
+  gcrResources: string;
   seedPlayerId: string;
   seedActorId: string;
   seedApiKey: string;
@@ -22,6 +25,9 @@ const INPUT_DEFAULTS: AdminInputs = {
   actorApiKey: "my-player-key",
   grantPlayerId: "player_1",
   grantResources: '{"gold": 100}',
+  gcrPlayerId: "player_1",
+  gcrCharacterId: "hero_1",
+  gcrResources: '{"xp": 500}',
   seedPlayerId: "player_1",
   seedActorId: "actor_1",
   seedApiKey: "my-player-key",
@@ -200,6 +206,39 @@ export default function AdminPanel({ settings, onUpdateSettings }: {
     }
   };
 
+  // ---- GrantCharacterResources ----
+  const doGrantCharacterResources = async () => {
+    setPending(true);
+    setError(null);
+    let resources: Record<string, number>;
+    try {
+      resources = JSON.parse(inputs.gcrResources) as Record<string, number>;
+    } catch {
+      setError("Invalid resources JSON");
+      setPending(false);
+      return;
+    }
+    try {
+      const tx: TransactionRequest = {
+        txId: nextTxId("admin_gcr"),
+        type: "GrantCharacterResources",
+        gameInstanceId: settings.gameInstanceId,
+        playerId: inputs.gcrPlayerId,
+        characterId: inputs.gcrCharacterId,
+        resources,
+      };
+      const res = await client.postTx(tx, { adminApiKey: settings.adminApiKey });
+      setLastResult({ title: "GrantCharacterResources", data: res });
+    } catch (err) {
+      setError(formatError(err));
+      if (err instanceof EngineClientError && err.body) {
+        setLastResult({ title: "GrantCharacterResources (error)", data: err.body });
+      }
+    } finally {
+      setPending(false);
+    }
+  };
+
   // ---- Load player state (verify resources) ----
   const doLoadPlayerState = async () => {
     setPending(true);
@@ -223,7 +262,9 @@ export default function AdminPanel({ settings, onUpdateSettings }: {
     const steps: SeedStep[] = [
       { label: `CreateActor (${inputs.seedActorId})`, status: "pending" },
       { label: `CreatePlayer (${inputs.seedPlayerId})`, status: "pending" },
+      { label: `CreateCharacter (hero_1)`, status: "pending" },
       { label: `GrantResources (${inputs.seedPlayerId})`, status: "pending" },
+      { label: `GrantCharacterResources (hero_1)`, status: "pending" },
     ];
     setSeedSteps([...steps]);
 
@@ -285,20 +326,36 @@ export default function AdminPanel({ settings, onUpdateSettings }: {
     );
     if (!ok2) { setPending(false); return; }
 
-    // Step 3: GrantResources
+    // Step 3: CreateCharacter (hero_1)
+    const ok3 = await runStep(2, () =>
+      client.postTx(
+        {
+          txId: nextTxId("seed_cc"),
+          type: "CreateCharacter",
+          gameInstanceId: settings.gameInstanceId,
+          playerId: inputs.seedPlayerId,
+          characterId: "hero_1",
+          classId: "warrior",
+        },
+        { apiKey: inputs.seedApiKey },
+      ),
+    );
+    if (!ok3) { setPending(false); return; }
+
+    // Step 4: GrantResources
     let resources: Record<string, number>;
     try {
       resources = JSON.parse(inputs.grantResources) as Record<string, number>;
     } catch {
-      steps[2].status = "error";
-      steps[2].error = "Invalid resources JSON";
+      steps[3].status = "error";
+      steps[3].error = "Invalid resources JSON";
       setSeedSteps([...steps]);
       setError("Invalid resources JSON");
       setPending(false);
       return;
     }
 
-    const ok3 = await runStep(2, () =>
+    const ok4 = await runStep(3, () =>
       client.postTx(
         {
           txId: nextTxId("seed_gr"),
@@ -310,8 +367,24 @@ export default function AdminPanel({ settings, onUpdateSettings }: {
         { adminApiKey: settings.adminApiKey },
       ),
     );
+    if (!ok4) { setPending(false); return; }
 
-    if (ok3) {
+    // Step 5: GrantCharacterResources (xp to the seeded character)
+    const ok5 = await runStep(4, () =>
+      client.postTx(
+        {
+          txId: nextTxId("seed_gcr"),
+          type: "GrantCharacterResources",
+          gameInstanceId: settings.gameInstanceId,
+          playerId: inputs.seedPlayerId,
+          characterId: "hero_1",
+          resources: { xp: 500 },
+        },
+        { adminApiKey: settings.adminApiKey },
+      ),
+    );
+
+    if (ok5) {
       // Save seed outputs to PlayerView localStorage for convenience
       const playerInputs = {
         playerId: inputs.seedPlayerId,
@@ -320,7 +393,7 @@ export default function AdminPanel({ settings, onUpdateSettings }: {
         classId: "warrior",
       };
       localStorage.setItem("gameng-sandbox-player-inputs", JSON.stringify(playerInputs));
-      setLastResult({ title: "Seed complete", data: { message: "All 3 steps OK. PlayerView inputs updated.", playerInputs } });
+      setLastResult({ title: "Seed complete", data: { message: "All 5 steps OK. PlayerView inputs updated.", playerInputs } });
     }
 
     setPending(false);
@@ -403,6 +476,29 @@ export default function AdminPanel({ settings, onUpdateSettings }: {
               Load Player State
             </button>
           </div>
+        </div>
+
+        {/* GrantCharacterResources */}
+        <div className="rounded-lg bg-gray-800 p-4 space-y-3">
+          <h2 className="text-lg font-semibold text-white">GrantCharacterResources</h2>
+          <InputField label="Player ID" value={inputs.gcrPlayerId} onChange={(v) => updateInput({ gcrPlayerId: v })} mono />
+          <InputField label="Character ID" value={inputs.gcrCharacterId} onChange={(v) => updateInput({ gcrCharacterId: v })} mono />
+          <div>
+            <label className="block text-xs text-gray-400 mb-1">Resources (JSON)</label>
+            <textarea
+              className="w-full rounded bg-gray-700 px-2 py-1 text-sm text-white border border-gray-600 focus:border-blue-500 focus:outline-none font-mono resize-none h-16"
+              value={inputs.gcrResources}
+              onChange={(e) => updateInput({ gcrResources: e.target.value })}
+              spellCheck={false}
+            />
+          </div>
+          <button
+            onClick={() => void doGrantCharacterResources()}
+            disabled={pending || !hasAdminKey}
+            className="rounded bg-green-700 px-3 py-1.5 text-sm text-white hover:bg-green-600 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            GrantCharacterResources
+          </button>
         </div>
 
         {/* Seed demo */}

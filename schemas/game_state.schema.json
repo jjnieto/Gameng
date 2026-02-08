@@ -90,6 +90,13 @@
             "minLength": 1
           },
           "description": "Map of slotId to gearId. Empty slots are absent."
+        },
+        "resources": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          },
+          "description": "Map of resourceId to amount. Per-character resources (e.g. xp). Absent or empty means no resources."
         }
       }
     },

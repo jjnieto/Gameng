@@ -4,6 +4,7 @@ import {
   computeTotalCost,
   hasResources,
   deductResources,
+  parseScopedCost,
 } from "../src/algorithms/level-cost.js";
 import { createApp } from "../src/app.js";
 import type { FastifyInstance } from "fastify";
@@ -100,6 +101,65 @@ describe("Level cost algorithms — unit tests", () => {
     });
   });
 
+  describe("mixed_linear_cost", () => {
+    const params = {
+      costs: [
+        { scope: "character", resourceId: "xp", base: 100, perLevel: 50 },
+        { scope: "player", resourceId: "gold", base: 10, perLevel: 5 },
+      ],
+    };
+
+    it("level 1 target returns empty", () => {
+      expect(
+        computeLevelCost(1, { algorithmId: "mixed_linear_cost", params }),
+      ).toEqual({});
+    });
+
+    it("level 2 target produces both prefixed keys", () => {
+      const cost = computeLevelCost(2, {
+        algorithmId: "mixed_linear_cost",
+        params,
+      });
+      expect(cost).toEqual({ "character.xp": 100, "player.gold": 10 });
+    });
+
+    it("level 4 target: correct calculation", () => {
+      // xp: 100 + 50*2 = 200, gold: 10 + 5*2 = 20
+      const cost = computeLevelCost(4, {
+        algorithmId: "mixed_linear_cost",
+        params,
+      });
+      expect(cost).toEqual({ "character.xp": 200, "player.gold": 20 });
+    });
+
+    it("multi-level: total from 1→3", () => {
+      // target 2: xp=100, gold=10; target 3: xp=150, gold=15. Totals: xp=250, gold=25
+      const total = computeTotalCost(1, 2, {
+        algorithmId: "mixed_linear_cost",
+        params,
+      });
+      expect(total).toEqual({ "character.xp": 250, "player.gold": 25 });
+    });
+
+    it("throws on missing costs array", () => {
+      expect(() =>
+        computeLevelCost(2, {
+          algorithmId: "mixed_linear_cost",
+          params: {},
+        }),
+      ).toThrow("costs");
+    });
+
+    it("throws on invalid scope", () => {
+      expect(() =>
+        computeLevelCost(2, {
+          algorithmId: "mixed_linear_cost",
+          params: { costs: [{ scope: "global", resourceId: "xp", base: 1, perLevel: 1 }] },
+        }),
+      ).toThrow("scope");
+    });
+  });
+
   describe("unknown algorithmId", () => {
     it("throws on unknown algorithmId", () => {
       expect(() =>
@@ -132,10 +192,51 @@ describe("Level cost algorithms — unit tests", () => {
       expect(wallet).toEqual({ xp: 350, gold: 125 });
     });
   });
+
+  describe("parseScopedCost", () => {
+    it("parses player-prefixed keys", () => {
+      const scoped = parseScopedCost({ "player.gold": 100, "player.gems": 5 });
+      expect(scoped).toEqual({
+        player: { gold: 100, gems: 5 },
+        character: {},
+      });
+    });
+
+    it("parses character-prefixed keys", () => {
+      const scoped = parseScopedCost({ "character.xp": 200 });
+      expect(scoped).toEqual({
+        player: {},
+        character: { xp: 200 },
+      });
+    });
+
+    it("parses mixed keys", () => {
+      const scoped = parseScopedCost({
+        "player.gold": 50,
+        "character.xp": 100,
+      });
+      expect(scoped).toEqual({
+        player: { gold: 50 },
+        character: { xp: 100 },
+      });
+    });
+
+    it("returns empty scopes for empty cost", () => {
+      const scoped = parseScopedCost({});
+      expect(scoped).toEqual({ player: {}, character: {} });
+    });
+
+    it("throws on unprefixed key", () => {
+      expect(() => parseScopedCost({ gold: 100 })).toThrow(
+        "Invalid cost resource key",
+      );
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
 // Integration tests — LevelUp cost + GrantResources via tx endpoint
+// (config_costs.json now uses prefixed keys: character.xp, player.gold)
 // ---------------------------------------------------------------------------
 
 interface TransactionResult {
@@ -146,7 +247,7 @@ interface TransactionResult {
   errorMessage?: string;
 }
 
-describe("Level cost — integration tests (config_costs)", () => {
+describe("Level cost — integration tests (config_costs, scoped)", () => {
   let app: FastifyInstance;
   const ADMIN_KEY = "test-admin-key-costs";
   const TEST_API_KEY = "test-key-costs";
@@ -218,28 +319,41 @@ describe("Level cost — integration tests (config_costs)", () => {
     await app.close();
   });
 
-  // -- GrantResources --
+  // -- GrantResources (player gold) --
 
-  it("GrantResources adds resources to player", async () => {
+  it("GrantResources adds gold to player", async () => {
     const res = await adminTx({
       txId: "cost_grant_001",
       type: "GrantResources",
       gameInstanceId: "instance_001",
       playerId: "player_1",
-      resources: { xp: 500, gold: 300 },
+      resources: { gold: 300 },
     });
     expect(res.statusCode).toBe(200);
     const body = res.json<TransactionResult>();
     expect(body.accepted).toBe(true);
 
-    // Verify resources via player state
     const playerRes = await app.inject({
       method: "GET",
       url: "/instance_001/state/player/player_1",
       headers: { authorization: `Bearer ${TEST_API_KEY}` },
     });
     const player = playerRes.json<{ resources: Record<string, number> }>();
-    expect(player.resources).toEqual({ xp: 500, gold: 300 });
+    expect(player.resources).toEqual({ gold: 300 });
+  });
+
+  // -- GrantCharacterResources (character xp) --
+
+  it("GrantCharacterResources adds xp to character", async () => {
+    const res = await adminTx({
+      txId: "cost_gcr_001",
+      type: "GrantCharacterResources",
+      gameInstanceId: "instance_001",
+      playerId: "player_1",
+      characterId: "char_1",
+      resources: { xp: 700 },
+    });
+    expect(res.json<TransactionResult>().accepted).toBe(true);
   });
 
   it("GrantResources accumulates (second grant)", async () => {
@@ -248,7 +362,7 @@ describe("Level cost — integration tests (config_costs)", () => {
       type: "GrantResources",
       gameInstanceId: "instance_001",
       playerId: "player_1",
-      resources: { xp: 200 },
+      resources: { gold: 200 },
     });
     expect(res.json<TransactionResult>().accepted).toBe(true);
 
@@ -258,8 +372,7 @@ describe("Level cost — integration tests (config_costs)", () => {
       headers: { authorization: `Bearer ${TEST_API_KEY}` },
     });
     const player = playerRes.json<{ resources: Record<string, number> }>();
-    expect(player.resources.xp).toBe(700);
-    expect(player.resources.gold).toBe(300);
+    expect(player.resources.gold).toBe(500);
   });
 
   it("GrantResources rejects nonexistent player", async () => {
@@ -268,7 +381,7 @@ describe("Level cost — integration tests (config_costs)", () => {
       type: "GrantResources",
       gameInstanceId: "instance_001",
       playerId: "nobody",
-      resources: { xp: 100 },
+      resources: { gold: 100 },
     });
     const body = res.json<TransactionResult>();
     expect(body.accepted).toBe(false);
@@ -285,25 +398,21 @@ describe("Level cost — integration tests (config_costs)", () => {
         type: "GrantResources",
         gameInstanceId: "instance_001",
         playerId: "player_1",
-        resources: { xp: 100 },
+        resources: { gold: 100 },
       },
     });
     expect(res.statusCode).toBe(401);
   });
 
-  // -- LevelUpCharacter with costs --
+  // -- LevelUpCharacter with scoped costs (character.xp) --
 
   it("LevelUpCharacter without resources → INSUFFICIENT_RESOURCES", async () => {
-    // Create a second player with no resources to test rejection
     await postTx({
       txId: "cost_setup_player2",
       type: "CreatePlayer",
       gameInstanceId: "instance_001",
       playerId: "player_2",
     });
-
-    // Need to associate player_2 with actor
-    // player_2 is already associated via CreatePlayer
 
     await postTx({
       txId: "cost_create_char2",
@@ -326,10 +435,10 @@ describe("Level cost — integration tests (config_costs)", () => {
     expect(body.errorCode).toBe("INSUFFICIENT_RESOURCES");
   });
 
-  it("LevelUpCharacter with enough resources → accepted, resources deducted", async () => {
+  it("LevelUpCharacter with enough resources → accepted, xp deducted from character", async () => {
     // char_1 is level 1, level up by 1.
-    // linear_cost: target=2, cost = 100 + 50*(2-2) = 100 xp
-    // player_1 has 700 xp, 300 gold
+    // linear_cost: resourceId=character.xp, target=2, cost = 100 + 50*(2-2) = 100
+    // char_1 has 700 xp
     const res = await postTx({
       txId: "cost_lu_char_ok",
       type: "LevelUpCharacter",
@@ -340,15 +449,19 @@ describe("Level cost — integration tests (config_costs)", () => {
     const body = res.json<TransactionResult>();
     expect(body.accepted).toBe(true);
 
-    // Verify resources deducted: 700 - 100 = 600 xp
+    // Verify character xp deducted: 700 - 100 = 600
     const playerRes = await app.inject({
       method: "GET",
       url: "/instance_001/state/player/player_1",
       headers: { authorization: `Bearer ${TEST_API_KEY}` },
     });
-    const player = playerRes.json<{ resources: Record<string, number> }>();
-    expect(player.resources.xp).toBe(600);
-    expect(player.resources.gold).toBe(300); // unchanged
+    const player = playerRes.json<{
+      resources: Record<string, number>;
+      characters: Record<string, { resources?: Record<string, number> }>;
+    }>();
+    expect(player.characters["char_1"].resources?.xp).toBe(600);
+    // Player gold unchanged
+    expect(player.resources.gold).toBe(500);
   });
 
   it("LevelUpCharacter multi-level deducts cumulative cost", async () => {
@@ -356,8 +469,7 @@ describe("Level cost — integration tests (config_costs)", () => {
     // target 3: 100 + 50*1 = 150
     // target 4: 100 + 50*2 = 200
     // target 5: 100 + 50*3 = 250
-    // total: 600 xp
-    // player_1 has 600 xp → exactly enough
+    // total: 600 xp. char_1 has 600 xp → exactly enough
     const res = await postTx({
       txId: "cost_lu_char_multi",
       type: "LevelUpCharacter",
@@ -369,21 +481,20 @@ describe("Level cost — integration tests (config_costs)", () => {
     const body = res.json<TransactionResult>();
     expect(body.accepted).toBe(true);
 
-    // Verify: 600 - 600 = 0 xp
     const playerRes = await app.inject({
       method: "GET",
       url: "/instance_001/state/player/player_1",
       headers: { authorization: `Bearer ${TEST_API_KEY}` },
     });
-    const player = playerRes.json<{ resources: Record<string, number> }>();
-    expect(player.resources.xp).toBe(0);
+    const player = playerRes.json<{
+      characters: Record<string, { resources?: Record<string, number> }>;
+    }>();
+    expect(player.characters["char_1"].resources?.xp).toBe(0);
   });
 
   it("LevelUpCharacter rejected when insufficient for multi-level", async () => {
-    // char_1 is now level 5, try levels=2 (to 7).
-    // target 6: 100 + 50*4 = 300
-    // target 7: 100 + 50*5 = 350
-    // total: 650 xp. player_1 has 0 xp → rejected
+    // char_1 is now level 5, try levels=2.
+    // char_1 has 0 xp → rejected
     const res = await postTx({
       txId: "cost_lu_char_insufficient",
       type: "LevelUpCharacter",
@@ -398,7 +509,6 @@ describe("Level cost — integration tests (config_costs)", () => {
   });
 
   it("MAX_LEVEL_REACHED still takes priority over cost check", async () => {
-    // char_1 is level 5, try levels=6 (to 11, maxLevel=10)
     const res = await postTx({
       txId: "cost_lu_char_max",
       type: "LevelUpCharacter",
@@ -412,12 +522,9 @@ describe("Level cost — integration tests (config_costs)", () => {
     expect(body.errorCode).toBe("MAX_LEVEL_REACHED");
   });
 
-  // -- LevelUpGear with costs --
+  // -- LevelUpGear with scoped costs (player.gold) --
 
   it("LevelUpGear without resources → INSUFFICIENT_RESOURCES", async () => {
-    // sword_1 is level 1. player_1 has 0 xp, 300 gold.
-    // linear_cost for gear: target=2, cost = 50 + 25*(2-2) = 50 gold
-    // player_1 has 300 gold → actually enough! Use player_2 instead.
     await postTx({
       txId: "cost_create_gear2",
       type: "CreateGear",
@@ -439,10 +546,9 @@ describe("Level cost — integration tests (config_costs)", () => {
     expect(body.errorCode).toBe("INSUFFICIENT_RESOURCES");
   });
 
-  it("LevelUpGear with enough resources → accepted, gold deducted", async () => {
-    // sword_1 is level 1. levelCostGear: linear_cost with resourceId=gold, base=50, perLevel=25.
-    // target=2: cost = 50 + 25*(2-2) = 50 gold
-    // player_1 has 300 gold
+  it("LevelUpGear with enough resources → accepted, gold deducted from player", async () => {
+    // sword_1 is level 1. levelCostGear: linear_cost with resourceId=player.gold, base=50, perLevel=25.
+    // target=2: cost = 50 gold. player_1 has 500 gold
     const res = await postTx({
       txId: "cost_lu_gear_ok",
       type: "LevelUpGear",
@@ -453,21 +559,19 @@ describe("Level cost — integration tests (config_costs)", () => {
     const body = res.json<TransactionResult>();
     expect(body.accepted).toBe(true);
 
-    // Verify: 300 - 50 = 250 gold
     const playerRes = await app.inject({
       method: "GET",
       url: "/instance_001/state/player/player_1",
       headers: { authorization: `Bearer ${TEST_API_KEY}` },
     });
     const player = playerRes.json<{ resources: Record<string, number> }>();
-    expect(player.resources.gold).toBe(250);
+    expect(player.resources.gold).toBe(450);
   });
 
   it("LevelUpGear multi-level deducts cumulative cost", async () => {
     // sword_1 is now level 2, level up by 2 (to 4).
-    // target 3: 50 + 25*1 = 75
-    // target 4: 50 + 25*2 = 100
-    // total: 175 gold. player_1 has 250 → enough
+    // target 3: 50 + 25*1 = 75, target 4: 50 + 25*2 = 100. Total: 175 gold.
+    // player_1 has 450 gold → enough
     const res = await postTx({
       txId: "cost_lu_gear_multi",
       type: "LevelUpGear",
@@ -479,14 +583,13 @@ describe("Level cost — integration tests (config_costs)", () => {
     const body = res.json<TransactionResult>();
     expect(body.accepted).toBe(true);
 
-    // 250 - 175 = 75 gold
     const playerRes = await app.inject({
       method: "GET",
       url: "/instance_001/state/player/player_1",
       headers: { authorization: `Bearer ${TEST_API_KEY}` },
     });
     const player = playerRes.json<{ resources: Record<string, number> }>();
-    expect(player.resources.gold).toBe(75);
+    expect(player.resources.gold).toBe(275);
   });
 });
 

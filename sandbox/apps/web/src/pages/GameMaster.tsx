@@ -897,6 +897,32 @@ export default function GameMaster({ settings }: { settings: Settings }) {
                         </div>
                       )}
 
+                      {/* Character Resources */}
+                      {selectedChar && Object.keys(selectedChar.resources ?? {}).length > 0 && (
+                        <div className="space-y-1 border-t border-gray-700 pt-2">
+                          <p className="text-xs text-gray-400 font-semibold">
+                            Character Resources:
+                          </p>
+                          <table className="w-full text-xs">
+                            <tbody>
+                              {Object.entries(selectedChar.resources ?? {}).map(
+                                ([k, v]) => (
+                                  <tr
+                                    key={k}
+                                    className="border-b border-gray-700/50"
+                                  >
+                                    <td className="py-0.5 text-gray-400">{k}</td>
+                                    <td className="py-0.5 text-right text-cyan-300 font-mono font-semibold">
+                                      {v}
+                                    </td>
+                                  </tr>
+                                ),
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+
                       {/* Stats */}
                       {stats && (
                         <div className="space-y-2 border-t border-gray-700 pt-2">
