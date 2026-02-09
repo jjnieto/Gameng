@@ -19,6 +19,6 @@ export default tseslint.config(
     },
   },
   {
-    ignores: ["dist/", "node_modules/", "sandbox/"],
+    ignores: ["dist/", "node_modules/", "sandbox/", "bff/"],
   },
 );

@@ -142,5 +142,8 @@ vite.config.ts.timestamp-*
 sandbox/data/**
 !sandbox/data/**/.gitkeep
 
+# BFF runtime data
+bff/data/**
+
 nul
 NUL
