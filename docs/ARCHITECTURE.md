@@ -103,27 +103,27 @@ graph TB
 
 ```mermaid
 graph LR
-  subgraph Internet["Internet"]
-    Client["Client"]
+  subgraph Internet
+    Client
   end
 
-  subgraph Production["Production Deployment"]
-    BFF["BFF<br/>:5000"]
-    ENG["Engine<br/>:3000"]
+  subgraph Production
+    BFF["BFF :5000"]
+    ENG["Engine :3000"]
   end
 
-  subgraph DevEnv["Development (Sandbox)"]
-    SPA["React SPA<br/>:5173"]
-    LNCH["Launcher<br/>:4010"]
-    ENGD["Engine<br/>:3000"]
+  subgraph Sandbox
+    SPA["React SPA :5173"]
+    LNCH["Launcher :4010"]
+    ENGDEV["Engine :3000"]
   end
 
-  Client -- "JWT auth<br/>HTTPS" --> BFF
-  BFF -- "Bearer apiKey<br/>HTTP (internal)" --> ENG
+  Client -->|"JWT + HTTPS"| BFF
+  BFF -->|"Bearer apiKey"| ENG
 
-  SPA -- "HTTP" --> LNCH
-  LNCH -- "proxy /engine/*<br/>HTTP" --> ENGD
-  LNCH -- "spawn/stop<br/>child_process" -.-> ENGD
+  SPA -->|"HTTP"| LNCH
+  LNCH -->|"proxy /engine/*"| ENGDEV
+  LNCH -.->|"spawn / stop"| ENGDEV
 ```
 
 ---
