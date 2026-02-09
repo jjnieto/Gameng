@@ -125,9 +125,13 @@ graph LR
   LNCH -- "proxy /engine/*<br/>HTTP" --> ENGD
   LNCH -- "spawn/stop<br/>child_process" -.-> ENGD
 
-  style Internet fill:#e3f2fd,stroke:#1976d2
-  style Production fill:#e8f5e9,stroke:#388e3c
-  style DevEnv fill:#f3e5f5,stroke:#7b1fa2
+  classDef internet fill:#e3f2fd,stroke:#1976d2,color:#0d47a1
+  classDef prod fill:#e8f5e9,stroke:#388e3c,color:#1b5e20
+  classDef dev fill:#f3e5f5,stroke:#7b1fa2,color:#4a148c
+
+  class Client internet
+  class BFF,ENG prod
+  class SPA,LNCH,ENGD dev
 ```
 
 ---
@@ -271,9 +275,9 @@ flowchart TB
 
   MutateState["Mutate GameState<br/>Bump stateVersion"]
   MutateState --> CacheResponse["Cache in txIdCache"]
-  CacheResponse --> Response([200 {accepted, stateVersion}])
+  CacheResponse --> Response(["200 accepted + stateVersion"])
 
-  E404 --> End([Response sent])
+  E404 --> End(["Response sent"])
   E401A --> CacheErr["Cache error response"]
   E401B --> CacheErr
   E403 --> CacheErr
