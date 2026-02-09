@@ -124,14 +124,6 @@ graph LR
   SPA -- "HTTP" --> LNCH
   LNCH -- "proxy /engine/*<br/>HTTP" --> ENGD
   LNCH -- "spawn/stop<br/>child_process" -.-> ENGD
-
-  classDef internet fill:#e3f2fd,stroke:#1976d2,color:#0d47a1
-  classDef prod fill:#e8f5e9,stroke:#388e3c,color:#1b5e20
-  classDef dev fill:#f3e5f5,stroke:#7b1fa2,color:#4a148c
-
-  class Client internet
-  class BFF,ENG prod
-  class SPA,LNCH,ENGD dev
 ```
 
 ---
