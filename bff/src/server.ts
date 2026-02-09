@@ -40,7 +40,7 @@ await app.register(rateLimit, {
 await registerJwt(app, config.jwtSecret, config.jwtExpiry);
 
 // Database
-const migrationsDir = resolve(join("bff", "migrations"));
+const migrationsDir = resolve(import.meta.dirname, "..", "migrations");
 const db = initDb(config.dbPath, migrationsDir);
 const userStore = new UserStore(db);
 

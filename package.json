@@ -26,6 +26,7 @@
     "bff": "npm run --prefix bff dev",
     "bff:build": "npm run --prefix bff build",
     "bff:test": "npm run --prefix bff test",
+    "bff:test:e2e": "npm run build && npm run bff:build && npm run --prefix bff test:e2e",
     "sandbox:stop": "node scripts/sandbox-kill-ports.mjs",
     "sandbox:reset": "node scripts/sandbox-kill-ports.mjs && node -e \"const fs=require('fs');const p=require('path');['configs','snapshots','logs'].forEach(d=>{const dir=p.join('sandbox','data',d);if(fs.existsSync(dir)){fs.readdirSync(dir).filter(f=>f!=='.gitkeep').forEach(f=>fs.rmSync(p.join(dir,f),{recursive:true}))}});console.log('sandbox/data cleaned')\""
   },
