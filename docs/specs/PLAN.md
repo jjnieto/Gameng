@@ -133,7 +133,133 @@ La prioridad es tener un esqueleto funcionando end‑to‑end y aumentar complej
 
 ---
 
-## 7. Estrategia de pruebas y validación
+---
+
+## 7. Fase 4 — Backend For Frontend (BFF)
+
+**Objetivo:** Capa intermedia entre clientes externos y el engine, que ofrece autenticación por JWT, simplificación de la API y aislamiento de las credenciales internas (apiKeys de actores).
+
+### Arquitectura
+
+```
+Cliente (Browser/Mobile) → BFF (:5000) → Engine (:3000)
+```
+
+- El cliente **nunca** habla directamente con el engine.
+- El BFF traduce JWT → apiKey de actor en cada petición.
+- Mapeo 1:1: cada usuario BFF = 1 actor engine = 1 player engine.
+
+### Slice BFF‑1 — Esqueleto + proxy passthrough
+- Proyecto `bff/` con Fastify, CORS, TypeScript.
+- `proxyToEngine()`: reenvía peticiones al engine preservando headers.
+- Rutas passthrough: `/game/health`, `/game/config`, `/game/version`.
+- Tests con fake engine (Fastify mock).
+
+### Slice BFF‑2 — Autenticación (register, login, refresh)
+- **SQLite** (`better-sqlite3`) para tabla `users` (email, password_hash, actor_id, api_key, player_id).
+- **bcrypt** para hash de contraseñas.
+- **@fastify/jwt** para emisión y verificación de tokens.
+- `POST /auth/register`: valida input → CreateActor en engine → CreatePlayer en engine → INSERT en SQLite → JWT.
+- `POST /auth/login`: verifica email+password contra SQLite → JWT (no toca el engine).
+- `POST /auth/refresh`: renueva el JWT con los mismos datos del usuario.
+
+### Slice BFF‑3 — Proxy autenticado (JWT → apiKey)
+- Las rutas `/game/*` protegidas con `requireAuth` (preHandler JWT).
+- El BFF extrae `userId` del JWT, busca `api_key` en SQLite, e inyecta `Authorization: Bearer {apiKey}` hacia el engine.
+- El cliente nunca ve la apiKey del actor.
+
+### Slice BFF‑4 — Rutas tipadas de gameplay
+- Rutas simplificadas que auto-rellenan `txId` (UUID), `gameInstanceId` y `playerId`:
+  - `POST /game/character`, `/game/gear`, `/game/equip`, `/game/unequip`
+  - `POST /game/levelup/character`, `/game/levelup/gear`
+  - `GET /game/player`, `/game/stats/:characterId`
+  - `POST /game/tx` (passthrough raw para casos avanzados)
+
+### Slice BFF‑5 — API de administración
+- Rutas `/admin/*` protegidas por header `X-Admin-Secret`.
+- `POST /admin/grant-resources`, `/admin/grant-character-resources`: inyectan admin key hacia el engine.
+- `GET /admin/users`: lista usuarios (sin exponer password_hash ni api_key).
+
+### Slice BFF‑6 — Hardening + observabilidad
+- **@fastify/helmet**: security headers.
+- **@fastify/rate-limit**: 100 req/min global, 5/min register, 10/min login.
+- `GET /health`: probe del engine + check de conectividad SQLite.
+
+### Tests
+- 54 tests unitarios (5 ficheros: proxy, auth, game-routes, admin-routes, health).
+- 30 tests E2E contra engine + BFF reales (spawned como child processes).
+
+---
+
+## 8. Fase 5 — Sandbox (herramientas de desarrollo)
+
+**Objetivo:** Entorno local para probar el engine sin escribir curl. Un launcher que gestiona el proceso del engine y una SPA React para interactuar visualmente.
+
+### Arquitectura
+
+```
+React SPA (:5173) → Launcher (:4010) → Engine (:3000)
+```
+
+- El launcher actúa como **process manager** (spawn/stop/restart del engine) y **proxy** (`/engine/*` → engine).
+- La SPA no necesita saber el puerto del engine; habla solo con el launcher.
+
+### Slice SBX‑0 — Esqueleto
+- `sandbox/apps/launcher/`: Fastify en puerto 4010, `GET /status`.
+- `sandbox/apps/web/`: Vite + React + Tailwind en puerto 5173.
+- Scripts root: `npm run sandbox` (concurrently launcher + web), `sandbox:reset`, `sandbox:stop`.
+
+### Slice SBX‑1 — Launcher (Process Manager)
+- `EngineProcessManager`: spawn engine como child process con `GAMENG_E2E=1`.
+- `LogBuffer`: ring buffer de 2000 líneas (stdout + stderr del engine).
+- Rutas de control: `POST /control/start`, `/control/stop`, `/control/restart`, `GET /control/status`, `/control/logs`.
+- Rutas proxy: `/engine/health`, `/engine/:id/tx`, `/engine/:id/state/player/:pid`, etc.
+- `@fastify/cors` para acceso desde la SPA.
+- Graceful shutdown: `POST /__shutdown` (engine) + `process.on("exit")` kill síncrono (Windows).
+
+### Slice SBX‑2 — Server Control + Player Client
+- **ServerControl** (`/server`): estado del engine, start/stop/restart, visor de logs en vivo.
+- **PlayerView** (`/player`): inputs (apiKey, playerId, characterId, classId), botones para CreatePlayer/CreateCharacter/CreateGear/GetStats, panel JSON de resultados, polling de stateVersion.
+- `engineClient.ts`: cliente tipado (health, config, stateVersion, postTx, getPlayerState, getCharacterStats).
+- `launcherClient.ts`: cliente tipado (start, stop, restart, getStatus, getLogs, saveConfig).
+- `useSettings` hook con persistencia en localStorage.
+
+### Slice SBX‑3 — Config Studio
+- **ConfigEditor** (`/config`): editor visual + JSON con tabs y sync bidireccional.
+- Validación Ajv contra `game_config.schema.json` real.
+- Presets (minimal, sets), Load from engine, Save to launcher, Save+Restart, Format, Reset.
+- Paneles visuales: ClassesPanel, GearDefsPanel, AlgorithmsPanel, StatMapEditor, EquipPatternsEditor, RestrictionsEditor.
+
+### Slice SBX‑4 — Admin Console
+- **AdminPanel** (`/admin`): formularios CreateActor, GrantResources, GrantCharacterResources.
+- **Seed Demo**: secuencia automatizada (CreateActor → CreatePlayer → GrantResources → GrantCharacterResources) con log paso a paso.
+- Guarda outputs en localStorage para uso inmediato en PlayerView.
+
+### Slice SBX‑5 — Player Client completo
+- Layout 3 columnas: personaje + equipo + stats.
+- Dropdowns config-driven (clases, gearDefs).
+- Slot grid, equip/unequip con toggle swap, selector de patrón, info de restricciones y sets.
+- Polling stateVersion (1s, backoff 3s), auto-refresh, indicador connected/disconnected.
+- LevelUpCharacter + LevelUpGear con guard de nivel máximo.
+- Tabla de recursos (player + character), activity feed (últimas 5 TXs).
+
+### Slice SBX‑6 — GM Dashboard + Scenario Runner
+- **GameMaster** (`/gm`): registro de IDs conocidos, inspector de player/character, slot grid + stats, Tx Builder lite (JSON raw con auto-fill txId/gameInstanceId), polling stateVersion.
+- **ScenarioRunner** (`/scenarios`): escenarios scriptados con pasos (TransactionRequest[]), variables (`${ADMIN_API_KEY}`, `${LAST_PLAYER_ID}`, etc.), apply config + restart, continueOnFail, export/import `.scenario.json`, demo preset.
+- RuntimeContext: captura IDs de TXs aceptadas (`${LAST_*}`), push a PlayerView/GM, deep links, resume from step N.
+
+### Launcher Proxy
+- Proxy transparente `/engine/*` → engine para evitar CORS y ocultar puerto del engine.
+- `Settings.useProxy` (default true) en la SPA.
+- Códigos de error: 503 ENGINE_NOT_RUNNING, 502 ENGINE_UNREACHABLE.
+
+### Tests
+- 22 tests del launcher (control + proxy).
+- La SPA no tiene tests unitarios (UI manual).
+
+---
+
+## 9. Estrategia de pruebas y validación
 
 - **Tests de esquema:** GameConfig/Transaction válidos e inválidos (falla rápido).
 - **Golden tests de StatsCalculator:** configs pequeñas con resultados esperados y reproducibles.
@@ -144,7 +270,7 @@ La prioridad es tener un esqueleto funcionando end‑to‑end y aumentar complej
 
 ---
 
-## 8. Observabilidad y operación
+## 10. Observabilidad y operación
 
 - Logging estructurado de transacciones (aceptada/rechazada, motivo, duración).
 - Métricas básicas: latencia por tx, tamaño del estado, frecuencia y duración de snapshots.
@@ -152,18 +278,18 @@ La prioridad es tener un esqueleto funcionando end‑to‑end y aumentar complej
 
 ---
 
-## 9. Riesgos y mitigaciones
+## 11. Riesgos y mitigaciones
 
-- Extensibilidad “sin tocar código”: si no se decide pronto (DSL vs catálogo vs plugins), se rediseña el núcleo.  
+- Extensibilidad "sin tocar código": si no se decide pronto (DSL vs catálogo vs plugins), se rediseña el núcleo.
   **Mitigación:** decisión en Fase 1.
 - Snapshots sin log: si luego se exige durabilidad fuerte, añadir log puede ser intrusivo.
   **Decisión tomada:** se acepta pérdida entre snapshots. No se implementa log de transacciones. La arquitectura es servidor autoritativo con estado completo en memoria, persistido periódicamente por snapshots.
-- Multi‑instancia: complica aislamiento y memoria.  
+- Multi‑instancia: complica aislamiento y memoria.
   **Mitigación:** empezar con 1 instancia funcional y habilitar multi‑instancia después (Slice 2–3).
 
 ---
 
-## 10. Checklist de decisiones antes de codificar (cierre de especificación)
+## 12. Checklist de decisiones antes de codificar (cierre de especificación)
 
 - Política de conflictos al equipar (reject vs swap explícito).
 - Semántica exacta de restricciones de nivel.

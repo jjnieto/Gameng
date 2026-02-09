@@ -140,36 +140,42 @@ sequenceDiagram
   participant DB as 🗄️ SQLite
   participant E as ⚙️ Engine
 
-  Note over C,E: Registration Flow
+  Note over C,E: Registration (once per user)
 
   C->>+B: POST /auth/register<br/>{email, password}
-  B->>B: Validate input<br/>Check duplicate email
-  B->>B: Generate actorId, apiKey, playerId
+  B->>B: Validate input + check duplicate
 
-  B->>+E: POST /tx {type: "CreateActor"}<br/>Authorization: Bearer ADMIN_KEY
-  E->>E: Validate admin key
-  E-->>-B: {accepted: true}
+  B->>+E: POST /tx CreateActor<br/>Authorization: Bearer ADMIN_KEY
+  E-->>-B: accepted
 
-  B->>+E: POST /tx {type: "CreatePlayer"}<br/>Authorization: Bearer apiKey
-  E->>E: Create player in state
-  E-->>-B: {accepted: true}
+  B->>+E: POST /tx CreatePlayer<br/>Authorization: Bearer apiKey
+  E-->>-B: accepted
 
   B->>B: bcrypt.hash(password)
   B->>DB: INSERT user (email, hash, actorId, apiKey, playerId)
-  B->>B: jwt.sign({sub, email, actorId, playerId})
-  B-->>-C: 201 {token, expiresIn, playerId}
+  B->>B: jwt.sign(sub, actorId, playerId)
+  B-->>-C: 201 token + playerId
 
-  Note over C,E: Authenticated Game Request
+  Note over C,E: Login (returns existing actor + player)
+
+  C->>+B: POST /auth/login<br/>{email, password}
+  B->>DB: SELECT user WHERE email = ?
+  B->>B: bcrypt.compare(password, hash)
+  Note over B: Actor, Player, Characters, Gear<br/>all persist in Engine — nothing created
+  B->>B: jwt.sign(sub, actorId, playerId)
+  B-->>-C: 200 token + playerId
+
+  Note over C,E: Authenticated Game Request (after register OR login)
 
   C->>+B: POST /game/equip<br/>Authorization: Bearer JWT
   B->>B: jwt.verify(token)
   B->>DB: SELECT api_key WHERE id = jwt.sub
-  B->>+E: POST /tx {type: "EquipGear", ...}<br/>Authorization: Bearer apiKey
+  B->>+E: POST /tx EquipGear<br/>Authorization: Bearer apiKey
   E->>E: resolveActor(apiKey)
   E->>E: actorOwnsPlayer(actor, playerId)
   E->>E: Process transaction
-  E-->>-B: {accepted: true, stateVersion: 5}
-  B-->>-C: {accepted: true, stateVersion: 5}
+  E-->>-B: accepted + stateVersion
+  B-->>-C: accepted + stateVersion
 ```
 
 ---
