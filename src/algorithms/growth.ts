@@ -52,10 +52,36 @@ const exponential: GrowthFn = (baseStats, level, params) => {
 
 // -- Registry --
 
-const registry: Record<string, GrowthFn> = {
+export const growthRegistry: Record<string, GrowthFn> = {
   flat,
   linear,
   exponential,
+};
+
+// -- Catalog metadata --
+
+import type { AlgorithmMeta } from "./index.js";
+
+export const growthCatalog: Record<string, AlgorithmMeta> = {
+  flat: {
+    description: "Returns base stats as-is (floor). No scaling by level.",
+    params: {},
+  },
+  linear: {
+    description:
+      "Scales stats linearly: base * (1 + perLevelMultiplier * (level-1)) + additivePerLevel * (level-1).",
+    params: {
+      perLevelMultiplier: "number — multiplicative scaling factor per level",
+      "additivePerLevel?":
+        "Record<string, number> — optional flat bonus per stat per level",
+    },
+  },
+  exponential: {
+    description: "Scales stats exponentially: base * exponent^(level-1).",
+    params: {
+      exponent: "number — exponential base applied per level",
+    },
+  },
 };
 
 // -- Public helper --
@@ -66,7 +92,7 @@ export function applyGrowth(
   algorithmRef: { algorithmId: string; params?: Record<string, unknown> },
 ): StatMap {
   const effectiveLevel = level < 1 ? 1 : level;
-  const fn = registry[algorithmRef.algorithmId];
+  const fn = growthRegistry[algorithmRef.algorithmId];
   if (!fn) {
     throw new Error(`Unknown growth algorithmId: '${algorithmRef.algorithmId}'`);
   }

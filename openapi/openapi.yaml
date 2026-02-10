@@ -12,6 +12,8 @@ tags:
     description: Health check
   - name: config
     description: Game configuration (read-only)
+  - name: algorithms
+    description: Algorithm catalog discovery
   - name: state
     description: Game state (read-only)
   - name: transaction
@@ -100,6 +102,66 @@ paths:
                   levelCostGear:
                     algorithmId: flat
                     params: {}
+        "404":
+          description: Game instance not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                errorCode: INSTANCE_NOT_FOUND
+                errorMessage: "Game instance 'unknown' not found."
+
+  /{gameInstanceId}/algorithms:
+    get:
+      operationId: getAlgorithms
+      summary: Get algorithm catalog
+      description: >
+        Returns the full catalog of available growth and level-cost algorithms
+        with descriptions and expected parameters.
+        No authentication required (discovery endpoint).
+      tags:
+        - algorithms
+      parameters:
+        - $ref: "#/components/parameters/gameInstanceId"
+      responses:
+        "200":
+          description: Algorithm catalog
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlgorithmCatalog"
+              example:
+                growth:
+                  flat:
+                    description: "Returns base stats as-is (floor). No scaling by level."
+                    params: {}
+                  linear:
+                    description: "Scales stats linearly: base * (1 + perLevelMultiplier * (level-1)) + additivePerLevel * (level-1)."
+                    params:
+                      perLevelMultiplier: "number — multiplicative scaling factor per level"
+                      "additivePerLevel?": "Record<string, number> — optional flat bonus per stat per level"
+                  exponential:
+                    description: "Scales stats exponentially: base * exponent^(level-1)."
+                    params:
+                      exponent: "number — exponential base applied per level"
+                levelCost:
+                  flat:
+                    description: "Always returns empty cost (free level-ups)."
+                    params: {}
+                  free:
+                    description: "Alias for flat — free level-ups."
+                    params: {}
+                  linear_cost:
+                    description: "cost = base + perLevel * (targetLevel - 2). Single resource."
+                    params:
+                      resourceId: "string — resource key to charge"
+                      base: "number — base cost at level 2"
+                      perLevel: "number — additional cost per level above 2"
+                  mixed_linear_cost:
+                    description: "Multi-resource linear cost with scoped keys (player.*/character.*)."
+                    params:
+                      costs: "Array<{ scope: 'player'|'character', resourceId: string, base: number, perLevel: number }>"
         "404":
           description: Game instance not found
           content:
@@ -931,6 +993,40 @@ components:
           minimum: 1
         finalStats:
           $ref: "#/components/schemas/StatMap"
+
+    AlgorithmMeta:
+      type: object
+      required:
+        - description
+        - params
+      additionalProperties: false
+      properties:
+        description:
+          type: string
+          description: Human-readable description of the algorithm.
+        params:
+          type: object
+          additionalProperties:
+            type: string
+          description: Map of parameter name to type/description string.
+
+    AlgorithmCatalog:
+      type: object
+      required:
+        - growth
+        - levelCost
+      additionalProperties: false
+      properties:
+        growth:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/AlgorithmMeta"
+          description: Available growth algorithms.
+        levelCost:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/AlgorithmMeta"
+          description: Available level-cost algorithms.
 
   securitySchemes:
     BearerAuth:

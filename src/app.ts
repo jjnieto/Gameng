@@ -5,6 +5,7 @@ import playerRoutes from "./routes/player.js";
 import statsRoutes from "./routes/stats.js";
 import stateVersionRoutes from "./routes/state-version.js";
 import configRoutes from "./routes/config.js";
+import algorithmsRoutes from "./routes/algorithms.js";
 import { createGameInstanceStore } from "./state.js";
 import { loadGameConfig } from "./config-loader.js";
 import { SnapshotManager } from "./snapshot-manager.js";
@@ -100,6 +101,7 @@ export function createApp(options?: string | AppOptions) {
   app.register(statsRoutes);
   app.register(stateVersionRoutes);
   app.register(configRoutes);
+  app.register(algorithmsRoutes);
 
   // Periodic flush
   let intervalHandle: ReturnType<typeof setInterval> | undefined;

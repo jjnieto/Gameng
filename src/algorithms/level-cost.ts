@@ -105,11 +105,43 @@ const mixedLinearCost: LevelCostFn = (targetLevel, params) => {
 
 // -- Registry --
 
-const registry: Record<string, LevelCostFn> = {
+export const levelCostRegistry: Record<string, LevelCostFn> = {
   flat,
   free: flat,
   linear_cost: linearCost,
   mixed_linear_cost: mixedLinearCost,
+};
+
+// -- Catalog metadata --
+
+import type { AlgorithmMeta } from "./index.js";
+
+export const levelCostCatalog: Record<string, AlgorithmMeta> = {
+  flat: {
+    description: "Always returns empty cost (free level-ups).",
+    params: {},
+  },
+  free: {
+    description: "Alias for flat — free level-ups.",
+    params: {},
+  },
+  linear_cost: {
+    description:
+      "cost = base + perLevel * (targetLevel - 2). Single resource.",
+    params: {
+      resourceId: "string — resource key to charge",
+      base: "number — base cost at level 2",
+      perLevel: "number — additional cost per level above 2",
+    },
+  },
+  mixed_linear_cost: {
+    description:
+      "Multi-resource linear cost with scoped keys (player.*/character.*).",
+    params: {
+      costs:
+        "Array<{ scope: 'player'|'character', resourceId: string, base: number, perLevel: number }>",
+    },
+  },
 };
 
 // -- Public helpers --
@@ -118,7 +150,7 @@ export function computeLevelCost(
   targetLevel: number,
   algorithmRef: { algorithmId: string; params?: Record<string, unknown> },
 ): ResourceMap {
-  const fn = registry[algorithmRef.algorithmId];
+  const fn = levelCostRegistry[algorithmRef.algorithmId];
   if (!fn) {
     throw new Error(
       `Unknown level cost algorithmId: '${algorithmRef.algorithmId}'`,

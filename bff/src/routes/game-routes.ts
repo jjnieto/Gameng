@@ -1,5 +1,6 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { randomUUID } from "node:crypto";
+import { performance } from "node:perf_hooks";
 import { proxyToEngine } from "../proxy.js";
 import type { BffConfig } from "../config.js";
 import type { UserStore } from "../user-store.js";
@@ -31,6 +32,7 @@ function resolveApiKey(
 
 /**
  * Send a transaction to the engine, filling in txId, gameInstanceId, and playerId.
+ * Logs the action with timing and relevant IDs (never apiKeys or JWTs).
  */
 async function sendTx(
   config: BffConfig,
@@ -38,8 +40,10 @@ async function sendTx(
   playerId: string,
   type: string,
   fields: Record<string, unknown>,
-  reply: import("fastify").FastifyReply,
+  request: FastifyRequest,
+  reply: FastifyReply,
 ): Promise<void> {
+  const start = performance.now();
   await proxyToEngine(
     {
       engineUrl: config.engineUrl,
@@ -56,6 +60,62 @@ async function sendTx(
     },
     reply,
   );
+  const durationMs = Math.round(performance.now() - start);
+  request.log.info(
+    {
+      userId: (request.user as { sub?: number } | undefined)?.sub,
+      action: type,
+      playerId,
+      ...filterActionFields(fields),
+      statusCode: reply.statusCode,
+      durationMs,
+    },
+    "game action",
+  );
+}
+
+/**
+ * Log a read operation with timing.
+ */
+function logRead(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  action: string,
+  fields: Record<string, unknown>,
+  durationMs: number,
+): void {
+  request.log.info(
+    {
+      userId: (request.user as { sub?: number } | undefined)?.sub,
+      action,
+      ...fields,
+      statusCode: reply.statusCode,
+      durationMs,
+    },
+    "game read",
+  );
+}
+
+/** Pick only safe fields from action fields (IDs and flags, never secrets). */
+function filterActionFields(
+  fields: Record<string, unknown>,
+): Record<string, unknown> {
+  const safe: Record<string, unknown> = {};
+  const ALLOWED_KEYS = [
+    "characterId",
+    "classId",
+    "gearId",
+    "gearDefId",
+    "slotPattern",
+    "swap",
+    "levels",
+  ];
+  for (const key of ALLOWED_KEYS) {
+    if (fields[key] !== undefined) {
+      safe[key] = fields[key];
+    }
+  }
+  return safe;
 }
 
 /**
@@ -115,6 +175,7 @@ export async function gameRoutes(
       });
     }
 
+    const start = performance.now();
     await proxyToEngine(
       {
         engineUrl: config.engineUrl,
@@ -124,6 +185,7 @@ export async function gameRoutes(
       },
       reply,
     );
+    logRead(request, reply, "getPlayer", { playerId }, Math.round(performance.now() - start));
   });
 
   // GET /game/player/:playerId — explicit player (passthrough compat)
@@ -132,6 +194,7 @@ export async function gameRoutes(
     authHooks,
     async (request, reply) => {
       const apiKey = resolveApiKey(request, userStore);
+      const start = performance.now();
       await proxyToEngine(
         {
           engineUrl: config.engineUrl,
@@ -142,6 +205,11 @@ export async function gameRoutes(
         },
         reply,
       );
+      logRead(
+        request, reply, "getPlayer",
+        { playerId: request.params.playerId },
+        Math.round(performance.now() - start),
+      );
     },
   );
 
@@ -151,6 +219,7 @@ export async function gameRoutes(
     authHooks,
     async (request, reply) => {
       const apiKey = resolveApiKey(request, userStore);
+      const start = performance.now();
       await proxyToEngine(
         {
           engineUrl: config.engineUrl,
@@ -160,6 +229,11 @@ export async function gameRoutes(
           authHeader: apiKey ? undefined : request.headers.authorization,
         },
         reply,
+      );
+      logRead(
+        request, reply, "getStats",
+        { characterId: request.params.characterId },
+        Math.round(performance.now() - start),
       );
     },
   );
@@ -179,7 +253,7 @@ export async function gameRoutes(
           .send({ errorCode: "UNAUTHORIZED", errorMessage: "Authentication required." });
       }
       const { characterId, classId } = request.body;
-      await sendTx(config, apiKey, playerId, "CreateCharacter", { characterId, classId }, reply);
+      await sendTx(config, apiKey, playerId, "CreateCharacter", { characterId, classId }, request, reply);
     },
   );
 
@@ -196,7 +270,7 @@ export async function gameRoutes(
           .send({ errorCode: "UNAUTHORIZED", errorMessage: "Authentication required." });
       }
       const { gearId, gearDefId } = request.body;
-      await sendTx(config, apiKey, playerId, "CreateGear", { gearId, gearDefId }, reply);
+      await sendTx(config, apiKey, playerId, "CreateGear", { gearId, gearDefId }, request, reply);
     },
   );
 
@@ -216,7 +290,7 @@ export async function gameRoutes(
       const fields: Record<string, unknown> = { characterId, gearId };
       if (slotPattern) fields.slotPattern = slotPattern;
       if (swap !== undefined) fields.swap = swap;
-      await sendTx(config, apiKey, playerId, "EquipGear", fields, reply);
+      await sendTx(config, apiKey, playerId, "EquipGear", fields, request, reply);
     },
   );
 
@@ -235,7 +309,7 @@ export async function gameRoutes(
       const { gearId, characterId } = request.body;
       const fields: Record<string, unknown> = { gearId };
       if (characterId) fields.characterId = characterId;
-      await sendTx(config, apiKey, playerId, "UnequipGear", fields, reply);
+      await sendTx(config, apiKey, playerId, "UnequipGear", fields, request, reply);
     },
   );
 
@@ -254,7 +328,7 @@ export async function gameRoutes(
       const { characterId, levels } = request.body;
       const fields: Record<string, unknown> = { characterId };
       if (levels !== undefined) fields.levels = levels;
-      await sendTx(config, apiKey, playerId, "LevelUpCharacter", fields, reply);
+      await sendTx(config, apiKey, playerId, "LevelUpCharacter", fields, request, reply);
     },
   );
 
@@ -274,7 +348,7 @@ export async function gameRoutes(
       const fields: Record<string, unknown> = { gearId };
       if (levels !== undefined) fields.levels = levels;
       if (characterId) fields.characterId = characterId;
-      await sendTx(config, apiKey, playerId, "LevelUpGear", fields, reply);
+      await sendTx(config, apiKey, playerId, "LevelUpGear", fields, request, reply);
     },
   );
 
@@ -284,16 +358,30 @@ export async function gameRoutes(
     authHooks,
     async (request, reply) => {
       const apiKey = resolveApiKey(request, userStore);
+      const body = request.body as Record<string, unknown> | undefined;
+      const txType = typeof body?.type === "string" ? body.type : "unknown";
+      const start = performance.now();
       await proxyToEngine(
         {
           engineUrl: config.engineUrl,
           path: `/${instanceId}/tx`,
           method: "POST",
-          body: request.body,
+          body,
           apiKey,
           authHeader: apiKey ? undefined : request.headers.authorization,
         },
         reply,
+      );
+      const durationMs = Math.round(performance.now() - start);
+      request.log.info(
+        {
+          userId: (request.user as { sub?: number } | undefined)?.sub,
+          action: txType,
+          route: "passthrough",
+          statusCode: reply.statusCode,
+          durationMs,
+        },
+        "game action",
       );
     },
   );
